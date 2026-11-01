@@ -62,7 +62,7 @@ switch ($Target) {
     "view" {
         Require-Venv
         $env:PYTHONPATH = "src"
-        & $python src/hexa/view.py $Scene
+        & $python -m hexa.view $Scene
     }
 
     "step" {
