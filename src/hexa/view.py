@@ -22,7 +22,7 @@ except ImportError:
     sys.exit(1)
 
 from .params import P
-from .tag import build_assembly, build_core, build_ring, build_exploded
+from .tag import build_assembly, build_core, build_ring, build_exploded, build_worn
 from .checks import check_all, CheckError
 
 
@@ -32,6 +32,7 @@ SCENES: dict[str, callable] = {
     "ring":     lambda: build_ring(),
     "core":     lambda: build_core(),
     "exploded": lambda: build_exploded(),
+    "worn":     lambda: build_worn(),
 }
 
 

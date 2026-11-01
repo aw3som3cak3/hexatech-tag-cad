@@ -108,11 +108,32 @@ class HexaParams:
     """mm  triangle height above the facet surface (only used when TACTILE_MARK)."""
 
     # ── Wearable geometry ─────────────────────────────────────────────────────
-    LANYARD_HOLE_D: float = 3.0
-    """mm  chain / lanyard hole diameter."""
+    CHAIN_BALL_D: float = 2.4
+    """mm  standard military ball-chain bead diameter."""
+
+    CHAIN_NECK_D: float = 1.6
+    """mm  ball-chain neck (connector) diameter; gates minimum hole size."""
+
+    LANYARD_HOLE_D: float = 3.2
+    """mm  chain / lanyard hole diameter (CHAIN_NECK_D + 1.6 mm clearance)."""
 
     LANYARD_HOLE_EDGE: float = 1.5
     """mm  minimum wall between lanyard hole and outer edge."""
+
+    LANYARD_CHAMFER: float = 0.6
+    """mm  chamfer on both faces of the lanyard hole (prevents chain wear)."""
+
+    ENGRAVE_DEPTH: float = 0.15
+    """mm  laser engraving depth into facet face."""
+
+    ENGRAVE_H: float = 1.5
+    """mm  engraving character height."""
+
+    ENGRAVE_MARGIN: float = 1.0
+    """mm  margin from facet edge to engraving field boundary."""
+
+    BODY_CHAMFER: float = 0.4
+    """mm  chamfer on outer perimeter edges of the back (skin-side) face."""
 
     # ── Manufacturing tolerances ──────────────────────────────────────────────
     M_NOZZLE_D: float = 0.4
@@ -192,3 +213,14 @@ class HexaParams:
 
 #: Default parameters — the field-grade Hexa tag.
 P = HexaParams()
+
+#: Engraving field label for each of the 6 rim facets (0 = back, clockwise).
+#: Facet 0 faces away from the body; facet 3 faces the skin.
+FACET_LABELS: dict[int, str] = {
+    0: "LAST NAME",
+    1: "FIRST NAME",
+    2: "SVC NO",
+    3: "BLOOD TYPE",
+    4: "UNIT",
+    5: "NFC",
+}

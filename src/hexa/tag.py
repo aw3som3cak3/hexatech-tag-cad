@@ -4,6 +4,7 @@ build_ring()      — outer hexagonal ring body (frame)
 build_core()      — ceramic core carrier (twist-out puck)
 build_assembly()  — ring + core assembled (core inserted, flush)
 build_exploded()  — ring + core separated 15 mm in Z for inspection
+build_worn()      — assembly + chain stubs (how the tag is worn)
 
 All builders accept a HexaParams argument:
 
@@ -27,12 +28,14 @@ from build123d import (
     Circle,
     Compound,
     Cylinder,
+    GeomType,
     Location,
     Locations,
     Mode,
     Plane,
     RegularPolygon,
     Vector,
+    chamfer,
     extrude,
 )
 
@@ -62,7 +65,9 @@ def build_ring(p: HexaParams = P):
     - Hollow hex prism (rim + two face plates)
     - Slotted-ring antenna slot through the +Y flat face
     - Chip A recess on the back face (inner rim side, +Y quadrant)
-    - Lanyard hole (Z-axis cylinder) at the +X vertex midpoint
+    - Lanyard hole (Z-axis cylinder) at the +X vertex with entry chamfers
+    - Engraving relief zones on each of the 6 rim facets
+    - Body chamfer on back-face outer perimeter (ergonomics)
     """
     outer_ac      = p.RING_ACROSS_CORNERS
     inner_ac      = p.RING_INNER_ACROSS_CORNERS
@@ -78,6 +83,11 @@ def build_ring(p: HexaParams = P):
 
     # Chip A recess centre Y: midpoint of rim apothem, +Y side
     chip_a_cy = (outer_apo + inner_apo) / 2   # ~15.76 mm
+
+    # Engraving field dimensions on each facet
+    # Each facet: width = FACET_SIDE, height = ring_t; with ENGRAVE_MARGIN on all sides
+    engrave_w = p.FACET_SIDE - 2 * p.ENGRAVE_MARGIN
+    engrave_h = ring_t - 2 * p.ENGRAVE_MARGIN
 
     with BuildPart() as bp:
         # ── 1. Outer hex solid ──────────────────────────────────────────
@@ -124,6 +134,65 @@ def build_ring(p: HexaParams = P):
                 height=ring_t + 0.02,
                 mode=Mode.SUBTRACT,
             )
+
+        # ── 6. Engraving relief zones: shallow pocket on each of 6 facets ──
+        # Facets 0–5, starting from +Y (90°), stepping −60° each (clockwise).
+        # Facet outward normal angle from +X: 90°, 30°, −30°, −90°, −150°, 150°
+        if engrave_w > 0 and engrave_h > 0:
+            for i in range(p.N_FACETS):
+                alpha_deg = 90.0 - i * 60.0
+                alpha_rad = math.radians(alpha_deg)
+                # Face centre in XY, slightly inside outer face (half-depth inward)
+                f_cx = (outer_apo - p.ENGRAVE_DEPTH / 2) * math.cos(alpha_rad)
+                f_cy = (outer_apo - p.ENGRAVE_DEPTH / 2) * math.sin(alpha_rad)
+                # Box local X → outward normal (rotate alpha_deg around Z)
+                loc = Location(
+                    Vector(f_cx, f_cy, ring_t / 2),
+                    Vector(0, 0, 1),
+                    alpha_deg,
+                )
+                with Locations(loc):
+                    Box(
+                        p.ENGRAVE_DEPTH + 0.02,  # radial depth (local X)
+                        engrave_w,               # facet-parallel width (local Y)
+                        engrave_h,               # axial height (Z)
+                        mode=Mode.SUBTRACT,
+                    )
+
+        # ── 7. Body chamfer: back-face outer perimeter ──────────────────
+        if p.BODY_CHAMFER > 0:
+            try:
+                back_outer = (
+                    bp.edges()
+                    .filter_by(GeomType.LINE)
+                    .filter_by_position(Axis.Z, -1e-3, 1e-3)
+                )
+                if back_outer:
+                    chamfer(back_outer, length=p.BODY_CHAMFER)
+            except Exception:
+                pass  # chamfer is a cosmetic feature; skip gracefully if unsupported
+
+        # ── 8. Lanyard hole chamfer: entry/exit edges ───────────────────
+        if p.LANYARD_CHAMFER > 0:
+            try:
+                lh_edges = (
+                    bp.edges()
+                    .filter_by(GeomType.CIRCLE)
+                    .filter_by_position(
+                        Axis.X,
+                        lh_cx - p.LANYARD_HOLE_D,
+                        lh_cx + p.LANYARD_HOLE_D,
+                    )
+                    .filter_by_position(
+                        Axis.Y,
+                        -p.LANYARD_HOLE_D,
+                        p.LANYARD_HOLE_D,
+                    )
+                )
+                if lh_edges:
+                    chamfer(lh_edges, length=p.LANYARD_CHAMFER)
+            except Exception:
+                pass  # chamfer is a cosmetic feature; skip gracefully if unsupported
 
     return bp.part
 
@@ -202,3 +271,31 @@ def build_exploded(p: HexaParams = P, gap: float = 15.0) -> Compound:
     ring = build_ring(p)
     core = build_core(p).move(Location(Vector(0, 0, gap)))
     return Compound(children=[ring, core])
+
+
+def build_worn(p: HexaParams = P) -> Compound:
+    """Assembly + chain stub showing how the tag is worn on a ball chain.
+
+    The lanyard hole is at the +X vertex (the 'top' when the tag hangs
+    point-down). Two chain segments extend from the hole in the ±Z direction,
+    representing the chain loop passing through front-to-back.
+    """
+    ring = build_ring(p)
+    core = build_core(p)
+
+    lh_cx     = p.RING_ACROSS_CORNERS / 2 - p.RING_RIM_T / 2
+    chain_r   = p.CHAIN_NECK_D / 2
+    stub_len  = 30.0  # mm each side
+    ring_t    = p.RING_T
+
+    # Chain below (z = -stub_len … 0)
+    with BuildPart() as chain_below:
+        with Locations(Location(Vector(lh_cx, 0.0, -stub_len / 2))):
+            Cylinder(radius=chain_r, height=stub_len)
+
+    # Chain above (z = ring_t … ring_t + stub_len)
+    with BuildPart() as chain_above:
+        with Locations(Location(Vector(lh_cx, 0.0, ring_t + stub_len / 2))):
+            Cylinder(radius=chain_r, height=stub_len)
+
+    return Compound(children=[ring, core, chain_below.part, chain_above.part])
