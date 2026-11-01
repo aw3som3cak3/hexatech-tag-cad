@@ -11,7 +11,7 @@
     venv     Create .venv with Python 3.12 and install requirements.
     check    Run geometric self-checks (no files written).
     test     Run pytest.
-    view     Show a scene in OCP CAD Viewer (-Scene <name>: assembly|ring|core).
+    view     Show a scene in OCP CAD Viewer (-Scene <name>: assembly|assembled|ring|core|exploded).
     step     Export STEP files to out/step/.
     stl      Export STL files to out/stl/.
     clean    Delete out/.
