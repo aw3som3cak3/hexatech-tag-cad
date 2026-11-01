@@ -86,6 +86,42 @@ def check_core_fits(p: HexaParams = P) -> None:
         )
 
 
+def check_antenna_slot(p: HexaParams = P) -> None:
+    """Three structural web constraints for the slotted-ring antenna slot.
+
+    1. Radial web: slot bottom must not break through to the inner cavity wall.
+       Failure here structurally removes the seating lip the core rests against.
+    2. Lateral web: slot must not widen past the hex facet leaving a broken corner.
+    3. Slot depth must be positive (sanity).
+
+    Uses M_METAL_WEB_MIN as the floor — this is a gate for the metal tag.
+    For FDM mock-ups, M_POLYMER_WEB_MIN applies instead.
+    """
+    # 1. Radial web
+    radial_web = p.ANTENNA_SLOT_RADIAL_WEB
+    if radial_web < p.M_METAL_WEB_MIN:
+        raise CheckError(
+            f"ANTENNA_SLOT radial web={radial_web:.2f} mm "
+            f"< M_METAL_WEB_MIN={p.M_METAL_WEB_MIN:.2f} mm "
+            f"(RING_RIM_T={p.RING_RIM_T:.1f} - ANTENNA_SLOT_D={p.ANTENNA_SLOT_D:.1f})"
+        )
+
+    # 2. Lateral web
+    lateral_web = p.ANTENNA_SLOT_LATERAL_WEB
+    if lateral_web < p.M_METAL_WEB_MIN:
+        raise CheckError(
+            f"ANTENNA_SLOT lateral web={lateral_web:.2f} mm "
+            f"< M_METAL_WEB_MIN={p.M_METAL_WEB_MIN:.2f} mm "
+            f"(FACET_SIDE={p.FACET_SIDE:.1f}, ANTENNA_SLOT_W={p.ANTENNA_SLOT_W:.1f})"
+        )
+
+    # 3. Slot depth sanity
+    if p.ANTENNA_SLOT_D <= 0:
+        raise CheckError(
+            f"ANTENNA_SLOT_D={p.ANTENNA_SLOT_D}: slot depth must be positive."
+        )
+
+
 def check_all(p: HexaParams = P) -> None:
     """Run every check; raise CheckError on the first failure."""
     check_key_push(p)
@@ -93,3 +129,4 @@ def check_all(p: HexaParams = P) -> None:
     check_wall_min(p)
     check_lanyard_hole(p)
     check_core_fits(p)
+    check_antenna_slot(p)

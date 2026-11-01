@@ -9,6 +9,7 @@ from hexa.params import HexaParams, P
 from hexa.checks import (
     CheckError,
     check_all,
+    check_antenna_slot,
     check_core_fits,
     check_key_push,
     check_lanyard_hole,
@@ -79,3 +80,38 @@ class TestDefaultChecks:
         # Sanity: default core is positive and fits
         assert P.CORE_ACROSS_CORNERS > 0
         assert P.CORE_ACROSS_CORNERS < P.RING_INNER_ACROSS_CORNERS
+
+
+class TestAntennaSlot:
+    def test_default_passes(self):
+        check_antenna_slot(P)
+
+    def test_derived_radial_web(self):
+        # radial web = RING_RIM_T - ANTENNA_SLOT_D
+        expected = P.RING_RIM_T - P.ANTENNA_SLOT_D
+        assert abs(P.ANTENNA_SLOT_RADIAL_WEB - expected) < 1e-9
+
+    def test_derived_lateral_web(self):
+        # lateral web = (FACET_SIDE - ANTENNA_SLOT_W) / 2
+        expected = (P.FACET_SIDE - P.ANTENNA_SLOT_W) / 2
+        assert abs(P.ANTENNA_SLOT_LATERAL_WEB - expected) < 1e-9
+
+    def test_facet_side_is_half_across_corners(self):
+        assert abs(P.FACET_SIDE - P.RING_ACROSS_CORNERS / 2) < 1e-9
+
+    def test_radial_web_too_small_raises(self):
+        # Slot deeper than rim → negative radial web
+        deep = replace(P, ANTENNA_SLOT_D=3.7)  # RING_RIM_T=3.6 → web=−0.1
+        with pytest.raises(CheckError, match="radial web"):
+            check_antenna_slot(deep)
+
+    def test_lateral_web_too_small_raises(self):
+        # Slot wider than facet → negative lateral web
+        wide = replace(P, ANTENNA_SLOT_W=20.0)  # FACET_SIDE=20 → web=0 < 0.5
+        with pytest.raises(CheckError, match="lateral web"):
+            check_antenna_slot(wide)
+
+    def test_slot_depth_zero_raises(self):
+        zero = replace(P, ANTENNA_SLOT_D=0.0)
+        with pytest.raises(CheckError, match="ANTENNA_SLOT_D"):
+            check_antenna_slot(zero)

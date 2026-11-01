@@ -86,7 +86,19 @@ class HexaParams:
     """mm  chip B pocket depth."""
 
     ANTENNA_SLOT_W: float = 1.2
-    """mm  slot width through the ring (slotted-ring antenna geometry)."""
+    """mm  slot width through the ring (slotted-ring antenna geometry, circumferential)."""
+
+    ANTENNA_SLOT_D: float = 2.0
+    """mm  slot radial depth (how far the slot penetrates the rim from the outer face).
+    Controls effective antenna inductance; deeper = longer RF detour path.
+    Structural gate only — electrical tuning is deferred to RF sim / test sample."""
+
+    # ── Manufacturing tolerances ── metal vs. polymer ─────────────────────────
+    M_METAL_WEB_MIN: float = 0.5
+    """mm  minimum wall for metal parts (CNC Ti Gr5 / 316L)."""
+
+    M_POLYMER_WEB_MIN: float = 1.2
+    """mm  minimum wall for FDM mock-up prints (3× 0.4 mm nozzle)."""
 
     # ── Tactile marker ────────────────────────────────────────────────────────
     TACTILE_MARK: bool = False
@@ -154,9 +166,28 @@ class HexaParams:
         return self.BAYONET_TWIST_DEG * math.pi * self.CORE_ACROSS_CORNERS / 360
 
     @property
+    def FACET_SIDE(self) -> float:
+        """mm  side length of the outer hexagon.
+        For a regular hexagon, side = circumradius = across_corners / 2."""
+        return self.RING_ACROSS_CORNERS / 2
+
+    @property
     def ANTENNA_SLOT_R(self) -> float:
-        """mm  notional radial centre of the slotted-ring antenna slot."""
-        return self.RING_INNER_ACROSS_CORNERS / 2 - self.ANTENNA_SLOT_W / 2
+        """mm  radial centre of the antenna slot (measured from tag centre).
+        Slot runs from the outer surface inward by ANTENNA_SLOT_D."""
+        return self.RING_ACROSS_CORNERS / 2 - self.ANTENNA_SLOT_D / 2
+
+    @property
+    def ANTENNA_SLOT_RADIAL_WEB(self) -> float:
+        """mm  remaining wall between slot bottom and inner cavity wall.
+        Must exceed M_METAL_WEB_MIN for structural integrity."""
+        return self.RING_RIM_T - self.ANTENNA_SLOT_D
+
+    @property
+    def ANTENNA_SLOT_LATERAL_WEB(self) -> float:
+        """mm  wall from slot edge to nearest hex corner (each side).
+        Must exceed M_METAL_WEB_MIN to keep the corner intact."""
+        return (self.FACET_SIDE - self.ANTENNA_SLOT_W) / 2
 
 
 #: Default parameters — the field-grade Hexa tag.
