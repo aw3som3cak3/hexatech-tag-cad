@@ -94,6 +94,42 @@ print('STL files written to out/stl/')
 "
     }
 
+    "stl-all" {
+        Require-Venv
+        $env:PYTHONPATH = "src"
+        New-Item -ItemType Directory -Force out/stl | Out-Null
+        & $python -c "
+import build123d as bd
+from hexa.tag import build_ring, build_core, build_assembly, build_exploded, build_worn
+from hexa.checks import check_all
+check_all()
+bd.export_stl(build_ring(),     'out/stl/ring.stl')
+bd.export_stl(build_core(),     'out/stl/core.stl')
+bd.export_stl(build_assembly(), 'out/stl/assembly.stl')
+bd.export_stl(build_exploded(), 'out/stl/exploded.stl')
+bd.export_stl(build_worn(),     'out/stl/worn.stl')
+print('STL files written to out/stl/')
+"
+    }
+
+    "gltf" {
+        Require-Venv
+        $env:PYTHONPATH = "src"
+        New-Item -ItemType Directory -Force out/gltf | Out-Null
+        & $python -c "
+import build123d as bd
+from hexa.tag import build_ring, build_core, build_assembly, build_exploded, build_worn
+from hexa.checks import check_all
+check_all()
+bd.export_gltf(build_ring(),     'out/gltf/ring.gltf')
+bd.export_gltf(build_core(),     'out/gltf/core.gltf')
+bd.export_gltf(build_assembly(), 'out/gltf/assembly.gltf')
+bd.export_gltf(build_exploded(), 'out/gltf/exploded.gltf')
+bd.export_gltf(build_worn(),     'out/gltf/worn.gltf')
+print('GLTF files written to out/gltf/')
+"
+    }
+
     "clean" {
         if (Test-Path out) { Remove-Item -Recurse -Force out }
         Write-Host "out/ deleted."
