@@ -65,7 +65,8 @@ def build_ring(p: HexaParams = P):
     - Hollow hex prism (rim + two face plates)
     - Slotted-ring antenna slot through the +Y flat face
     - Chip A recess on the back face (inner rim side, +Y quadrant)
-    - Lanyard hole (Z-axis cylinder) at the +X vertex with entry chamfers
+    - Two lanyard holes (Z-axis cylinders) at the +X vertex, spaced CHAIN_HOLE_SPACING
+      apart in Y — chain threads through both so the tag hangs flat and cannot rotate
     - Engraving relief zones on each of the 6 rim facets
     - Body chamfer on back-face outer perimeter (ergonomics)
     """
@@ -78,8 +79,10 @@ def build_ring(p: HexaParams = P):
     outer_apo     = _hex_apothem(outer_ac)   # 17.32 mm
     inner_apo     = _hex_apothem(inner_ac)   # 14.20 mm
 
-    # Lanyard hole centre: midpoint of rim in the +X vertex direction
+    # Chain hole centres: midpoint of rim in the +X vertex direction, ±spacing/2 in Y
     lh_cx = outer_ac / 2 - p.RING_RIM_T / 2   # 18.2 mm
+    lh_y1 = +p.CHAIN_HOLE_SPACING / 2          # +3.0 mm
+    lh_y2 = -p.CHAIN_HOLE_SPACING / 2          # -3.0 mm
 
     # Chip A recess centre Y: midpoint of rim apothem, +Y side
     chip_a_cy = (outer_apo + inner_apo) / 2   # ~15.76 mm
@@ -127,13 +130,15 @@ def build_ring(p: HexaParams = P):
                 mode=Mode.SUBTRACT,
             )
 
-        # ── 5. Lanyard hole: Z-axis cylinder at the +X vertex midpoint ──
-        with Locations(Location(Vector(lh_cx, 0.0, ring_t / 2))):
-            Cylinder(
-                radius=p.LANYARD_HOLE_D / 2,
-                height=ring_t + 0.02,
-                mode=Mode.SUBTRACT,
-            )
+        # ── 5. Two chain holes: Z-axis cylinders at +X vertex, offset ±Y ──
+        #    Chain threads through both so the tag hangs flat (cannot rotate).
+        for lh_y in (lh_y1, lh_y2):
+            with Locations(Location(Vector(lh_cx, lh_y, ring_t / 2))):
+                Cylinder(
+                    radius=p.LANYARD_HOLE_D / 2,
+                    height=ring_t + 0.02,
+                    mode=Mode.SUBTRACT,
+                )
 
         # ── 6. Engraving relief zones: shallow pocket on each of 6 facets ──
         # Facets 0–5, starting from +Y (90°), stepping −60° each (clockwise).
@@ -172,27 +177,28 @@ def build_ring(p: HexaParams = P):
             except Exception:
                 pass  # chamfer is a cosmetic feature; skip gracefully if unsupported
 
-        # ── 8. Lanyard hole chamfer: entry/exit edges ───────────────────
+        # ── 8. Chain hole chamfers: entry/exit edges on both holes ──────
         if p.LANYARD_CHAMFER > 0:
-            try:
-                lh_edges = (
-                    bp.edges()
-                    .filter_by(GeomType.CIRCLE)
-                    .filter_by_position(
-                        Axis.X,
-                        lh_cx - p.LANYARD_HOLE_D,
-                        lh_cx + p.LANYARD_HOLE_D,
+            for lh_y in (lh_y1, lh_y2):
+                try:
+                    lh_edges = (
+                        bp.edges()
+                        .filter_by(GeomType.CIRCLE)
+                        .filter_by_position(
+                            Axis.X,
+                            lh_cx - p.LANYARD_HOLE_D,
+                            lh_cx + p.LANYARD_HOLE_D,
+                        )
+                        .filter_by_position(
+                            Axis.Y,
+                            lh_y - p.LANYARD_HOLE_D,
+                            lh_y + p.LANYARD_HOLE_D,
+                        )
                     )
-                    .filter_by_position(
-                        Axis.Y,
-                        -p.LANYARD_HOLE_D,
-                        p.LANYARD_HOLE_D,
-                    )
-                )
-                if lh_edges:
-                    chamfer(lh_edges, length=p.LANYARD_CHAMFER)
-            except Exception:
-                pass  # chamfer is a cosmetic feature; skip gracefully if unsupported
+                    if lh_edges:
+                        chamfer(lh_edges, length=p.LANYARD_CHAMFER)
+                except Exception:
+                    pass  # chamfer is a cosmetic feature; skip gracefully if unsupported
 
     return bp.part
 
@@ -256,6 +262,31 @@ def build_core(p: HexaParams = P):
                 mode=Mode.SUBTRACT,
             )
 
+        # ── 4. Engraving relief zones on core facets ─────────────────────
+        # Same 6-facet layout as the ring but using CORE_ENGRAVE_* params.
+        # Both parts carry the same fields so either is independently identifiable.
+        core_apo  = _hex_apothem(core_ac)
+        c_engrave_w = core_ac / 2 - 2 * p.CORE_ENGRAVE_MARGIN
+        c_engrave_h = core_h - 2 * p.CORE_ENGRAVE_MARGIN
+        if c_engrave_w > 0 and c_engrave_h > 0:
+            for i in range(p.N_FACETS):
+                alpha_deg = 90.0 - i * 60.0
+                alpha_rad = math.radians(alpha_deg)
+                f_cx = (core_apo - p.CORE_ENGRAVE_DEPTH / 2) * math.cos(alpha_rad)
+                f_cy = (core_apo - p.CORE_ENGRAVE_DEPTH / 2) * math.sin(alpha_rad)
+                loc = Location(
+                    Vector(f_cx, f_cy, z0 + core_h / 2),
+                    Vector(0, 0, 1),
+                    alpha_deg,
+                )
+                with Locations(loc):
+                    Box(
+                        p.CORE_ENGRAVE_DEPTH + 0.02,
+                        c_engrave_w,
+                        c_engrave_h,
+                        mode=Mode.SUBTRACT,
+                    )
+
     return bp.part
 
 
@@ -274,28 +305,47 @@ def build_exploded(p: HexaParams = P, gap: float = 15.0) -> Compound:
 
 
 def build_worn(p: HexaParams = P) -> Compound:
-    """Assembly + chain stub showing how the tag is worn on a ball chain.
+    """Assembly + chain showing how the tag is worn on a ball chain.
 
-    The lanyard hole is at the +X vertex (the 'top' when the tag hangs
-    point-down). Two chain segments extend from the hole in the ±Z direction,
-    representing the chain loop passing through front-to-back.
+    The chain threads through TWO holes at the +X vertex (±CHAIN_HOLE_SPACING/2 in Y).
+    This prevents the tag from rotating — it hangs flat, point-down.
+
+    Chain routing: exits hole 1 upward → goes up chain · hole 1 downward → bridge
+    behind the tag → hole 2 upward → goes up chain · hole 2 exits upward.
+    Shown as: two upward stubs + two downward stubs + one horizontal bridge.
     """
     ring = build_ring(p)
     core = build_core(p)
 
-    lh_cx     = p.RING_ACROSS_CORNERS / 2 - p.RING_RIM_T / 2
-    chain_r   = p.CHAIN_NECK_D / 2
-    stub_len  = 30.0  # mm each side
-    ring_t    = p.RING_T
+    lh_cx    = p.RING_ACROSS_CORNERS / 2 - p.RING_RIM_T / 2
+    lh_y1    = +p.CHAIN_HOLE_SPACING / 2
+    lh_y2    = -p.CHAIN_HOLE_SPACING / 2
+    chain_r  = p.CHAIN_NECK_D / 2
+    stub_len = 30.0   # mm each chain segment above/below
+    ring_t   = p.RING_T
+    bridge_z = -4.0   # mm below back face for the bridge
 
-    # Chain below (z = -stub_len … 0)
-    with BuildPart() as chain_below:
-        with Locations(Location(Vector(lh_cx, 0.0, -stub_len / 2))):
-            Cylinder(radius=chain_r, height=stub_len)
+    parts = [ring, core]
 
-    # Chain above (z = ring_t … ring_t + stub_len)
-    with BuildPart() as chain_above:
-        with Locations(Location(Vector(lh_cx, 0.0, ring_t + stub_len / 2))):
-            Cylinder(radius=chain_r, height=stub_len)
+    for lh_y in (lh_y1, lh_y2):
+        # Chain segment above (exiting front face upward)
+        with BuildPart() as seg_above:
+            with Locations(Location(Vector(lh_cx, lh_y, ring_t + stub_len / 2))):
+                Cylinder(radius=chain_r, height=stub_len)
+        parts.append(seg_above.part)
 
-    return Compound(children=[ring, core, chain_below.part, chain_above.part])
+        # Chain segment below (exiting back face downward to bridge level)
+        below_len = abs(bridge_z)
+        with BuildPart() as seg_below:
+            with Locations(Location(Vector(lh_cx, lh_y, bridge_z + below_len / 2))):
+                Cylinder(radius=chain_r, height=below_len)
+        parts.append(seg_below.part)
+
+    # Horizontal bridge connecting the two downward exits behind the tag
+    bridge_span = abs(lh_y1 - lh_y2)
+    with BuildPart() as bridge:
+        with Locations(Location(Vector(lh_cx, 0.0, bridge_z), Vector(1, 0, 0), 90)):
+            Cylinder(radius=chain_r, height=bridge_span)
+    parts.append(bridge.part)
+
+    return Compound(children=parts)

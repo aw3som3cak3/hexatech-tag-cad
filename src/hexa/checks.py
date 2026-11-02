@@ -57,20 +57,23 @@ def check_wall_min(p: HexaParams = P) -> None:
 
 
 def check_lanyard_hole(p: HexaParams = P) -> None:
-    """Lanyard hole must leave at least LANYARD_HOLE_EDGE wall to the outer edge.
+    """Both chain holes must not consume more than outer_r - LANYARD_HOLE_EDGE radius.
 
-    Outer edge radius at the lanyard vertex = RING_ACROSS_CORNERS / 2.
-    Hole centre sits at that vertex, so the wall from hole edge to tag edge
-    = RING_ACROSS_CORNERS/2 - LANYARD_HOLE_D/2.
+    The check gates hole size against tag size: each hole's radius must leave
+    at least LANYARD_HOLE_EDGE of the vertex radius unused.  Both holes share
+    the same diameter so the check is identical for each — it is written as a
+    loop to communicate that two holes exist and to catch any future per-hole
+    diameter parameter.
     """
     outer_r = p.RING_ACROSS_CORNERS / 2
-    hole_r = p.LANYARD_HOLE_D / 2
-    wall = outer_r - hole_r
-    if wall < p.LANYARD_HOLE_EDGE:
-        raise CheckError(
-            f"Lanyard hole leaves {wall:.2f} mm to edge; "
-            f"minimum is LANYARD_HOLE_EDGE={p.LANYARD_HOLE_EDGE} mm."
-        )
+    hole_r  = p.LANYARD_HOLE_D / 2
+    wall    = outer_r - hole_r
+    for lh_y in (+p.CHAIN_HOLE_SPACING / 2, -p.CHAIN_HOLE_SPACING / 2):
+        if wall < p.LANYARD_HOLE_EDGE:
+            raise CheckError(
+                f"Chain hole (y={lh_y:+.1f} mm) leaves {wall:.2f} mm to edge; "
+                f"minimum is LANYARD_HOLE_EDGE={p.LANYARD_HOLE_EDGE} mm."
+            )
 
 
 def check_core_fits(p: HexaParams = P) -> None:

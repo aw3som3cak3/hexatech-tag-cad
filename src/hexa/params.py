@@ -135,6 +135,20 @@ class HexaParams:
     BODY_CHAMFER: float = 0.4
     """mm  chamfer on outer perimeter edges of the back (skin-side) face."""
 
+    CHAIN_HOLE_SPACING: float = 6.0
+    """mm  centre-to-centre distance between the two chain holes at the top vertex.
+    Chain threads through both holes so the tag hangs flat and cannot rotate."""
+
+    # ── Core engraving ────────────────────────────────────────────────────────
+    CORE_ENGRAVE_DEPTH: float = 0.15
+    """mm  laser engraving depth on core facets."""
+
+    CORE_ENGRAVE_H: float = 1.0
+    """mm  character height on core facets (tighter than ring — less axial space)."""
+
+    CORE_ENGRAVE_MARGIN: float = 0.6
+    """mm  margin from core facet edge to engraving field boundary."""
+
     # ── Manufacturing tolerances ──────────────────────────────────────────────
     M_NOZZLE_D: float = 0.4
     """mm  FDM nozzle diameter; gates minimum feature sizes."""
@@ -217,10 +231,10 @@ P = HexaParams()
 #: Engraving field label for each of the 6 rim facets (0 = back, clockwise).
 #: Facet 0 faces away from the body; facet 3 faces the skin.
 FACET_LABELS: dict[int, str] = {
-    0: "LAST NAME",
-    1: "FIRST NAME",
-    2: "SVC NO",
-    3: "BLOOD TYPE",
+    0: "SURNAME",
+    1: "GIVEN NAME",
+    2: "ID-A",      # first 8 chars of 16-char enrollment short-ID
+    3: "ID-B",      # last 8 chars of 16-char enrollment short-ID
     4: "UNIT",
     5: "NFC",
 }

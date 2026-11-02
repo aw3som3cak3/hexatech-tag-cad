@@ -73,7 +73,7 @@ class TestDefaultChecks:
     def test_lanyard_hole_too_large_raises(self):
         # 38mm hole: outer_r=20, hole_r=19, wall=1 < LANYARD_HOLE_EDGE=1.5
         huge_hole = replace(P, LANYARD_HOLE_D=38.0)
-        with pytest.raises(CheckError, match="[Ll]anyard"):
+        with pytest.raises(CheckError, match="[Cc]hain hole"):
             check_lanyard_hole(huge_hole)
 
     def test_core_positive(self):
