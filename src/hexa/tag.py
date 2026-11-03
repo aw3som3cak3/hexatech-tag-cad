@@ -26,6 +26,7 @@ from build123d import (
     BuildPart,
     BuildSketch,
     Circle,
+    Color,
     Compound,
     Cylinder,
     GeomType,
@@ -38,6 +39,11 @@ from build123d import (
     chamfer,
     extrude,
 )
+
+# Titanium Gr5 / 316L stainless — cool mid-grey with slight blue tint
+_COLOR_METAL = Color(0.72, 0.72, 0.76)
+# Stainless ball chain — slightly warmer steel grey
+_COLOR_CHAIN = Color(0.65, 0.65, 0.67)
 
 from .params import HexaParams, P
 
@@ -200,7 +206,9 @@ def build_ring(p: HexaParams = P):
                 except Exception:
                     pass  # chamfer is a cosmetic feature; skip gracefully if unsupported
 
-    return bp.part
+    part = bp.part
+    part.color = _COLOR_METAL
+    return part
 
 
 def build_core(p: HexaParams = P):
@@ -262,7 +270,7 @@ def build_core(p: HexaParams = P):
                 mode=Mode.SUBTRACT,
             )
 
-        # ── 4. Engraving relief zones on core facets ─────────────────────
+        # ── 4. Engraving relief zones on core facets ──────────────────────
         # Same 6-facet layout as the ring but using CORE_ENGRAVE_* params.
         # Both parts carry the same fields so either is independently identifiable.
         core_apo  = _hex_apothem(core_ac)
@@ -287,7 +295,9 @@ def build_core(p: HexaParams = P):
                         mode=Mode.SUBTRACT,
                     )
 
-    return bp.part
+    part = bp.part
+    part.color = _COLOR_METAL
+    return part
 
 
 def build_assembly(p: HexaParams = P) -> Compound:
@@ -332,6 +342,7 @@ def build_worn(p: HexaParams = P) -> Compound:
         with BuildPart() as seg_above:
             with Locations(Location(Vector(lh_cx, lh_y, ring_t + stub_len / 2))):
                 Cylinder(radius=chain_r, height=stub_len)
+        seg_above.part.color = _COLOR_CHAIN
         parts.append(seg_above.part)
 
         # Chain segment below (exiting back face downward to bridge level)
@@ -339,6 +350,7 @@ def build_worn(p: HexaParams = P) -> Compound:
         with BuildPart() as seg_below:
             with Locations(Location(Vector(lh_cx, lh_y, bridge_z + below_len / 2))):
                 Cylinder(radius=chain_r, height=below_len)
+        seg_below.part.color = _COLOR_CHAIN
         parts.append(seg_below.part)
 
     # Horizontal bridge connecting the two downward exits behind the tag
@@ -346,6 +358,7 @@ def build_worn(p: HexaParams = P) -> Compound:
     with BuildPart() as bridge:
         with Locations(Location(Vector(lh_cx, 0.0, bridge_z), Vector(1, 0, 0), 90)):
             Cylinder(radius=chain_r, height=bridge_span)
+    bridge.part.color = _COLOR_CHAIN
     parts.append(bridge.part)
 
     return Compound(children=parts)
