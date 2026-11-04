@@ -35,6 +35,7 @@ from build123d import (
     Mode,
     Plane,
     RegularPolygon,
+    Sphere,
     Text,
     Vector,
     chamfer,
@@ -47,6 +48,9 @@ _COLOR_RING  = Color(0.72, 0.72, 0.76)
 _COLOR_CORE  = Color(0.18, 0.38, 0.72)
 # Stainless ball chain — slightly warmer steel grey
 _COLOR_CHAIN = Color(0.65, 0.65, 0.67)
+# NFC IC package (black epoxy) and copper antenna trace
+_COLOR_CHIP   = Color(0.02, 0.02, 0.02)
+_COLOR_COPPER = Color(0.72, 0.42, 0.10)
 
 from .params import FACET_EXAMPLES, HexaParams, P
 
@@ -58,6 +62,65 @@ from .params import FACET_EXAMPLES, HexaParams, P
 def _hex_apothem(across_corners: float) -> float:
     """Centre-to-flat-face distance for a regular hexagon."""
     return across_corners / 2 * math.cos(math.radians(30))
+
+
+# ---------------------------------------------------------------------------
+# Chain helpers
+# ---------------------------------------------------------------------------
+
+def _ball_chain_y(x: float, y_start: float, z: float,
+                  length: float, color: Color,
+                  ball_d: float, neck_d: float) -> list:
+    """Return a list of parts forming a ball chain along +Y from (x, y_start, z).
+
+    Pitch = ball_d + neck_d*0.6 so beads slightly overlap the necks.
+    """
+    neck_len = neck_d * 0.6
+    pitch = ball_d + neck_len
+    n_beads = max(1, int(length / pitch))
+    parts = []
+    for i in range(n_beads):
+        cy = y_start + i * pitch + ball_d / 2
+        with BuildPart() as bead:
+            with Locations(Location(Vector(x, cy, z))):
+                Sphere(radius=ball_d / 2)
+        bead.part.color = color
+        parts.append(bead.part)
+        if i < n_beads - 1:
+            ny = cy + ball_d / 2
+            with BuildPart() as neck:
+                with Locations(Location(Vector(x, ny + neck_len / 2, z),
+                                        Vector(1, 0, 0), 90)):
+                    Cylinder(radius=neck_d / 2, height=neck_len)
+            neck.part.color = color
+            parts.append(neck.part)
+    return parts
+
+
+def _ball_chain_x(x_start: float, y: float, z: float,
+                  length: float, color: Color,
+                  ball_d: float, neck_d: float) -> list:
+    """Return ball chain parts along +X from (x_start, y, z)."""
+    neck_len = neck_d * 0.6
+    pitch = ball_d + neck_len
+    n_beads = max(1, int(length / pitch))
+    parts = []
+    for i in range(n_beads):
+        cx = x_start + i * pitch + ball_d / 2
+        with BuildPart() as bead:
+            with Locations(Location(Vector(cx, y, z))):
+                Sphere(radius=ball_d / 2)
+        bead.part.color = color
+        parts.append(bead.part)
+        if i < n_beads - 1:
+            nx = cx + ball_d / 2
+            with BuildPart() as neck:
+                with Locations(Location(Vector(nx + neck_len / 2, y, z),
+                                        Vector(0, 1, 0), 90)):
+                    Cylinder(radius=neck_d / 2, height=neck_len)
+            neck.part.color = color
+            parts.append(neck.part)
+    return parts
 
 
 # ---------------------------------------------------------------------------
@@ -174,8 +237,11 @@ def build_ring(p: HexaParams = P):
                 )
 
         # ── 8. Engraving relief pockets + example text on each facet ────
+        # Facet 0 (alpha=90°, +Y face) carries the antenna slot — no engrave pocket there.
         if engrave_w > 0 and engrave_h > 0:
             for i in range(p.N_FACETS):
+                if i == 0:
+                    continue          # antenna slot facet: slot already occupies this face
                 alpha_deg = 90.0 - i * 60.0
                 alpha_rad = math.radians(alpha_deg)
                 f_cx = (outer_apo - p.ENGRAVE_DEPTH / 2) * math.cos(alpha_rad)
@@ -240,7 +306,20 @@ def build_ring(p: HexaParams = P):
             except Exception:
                 pass
 
-        # ── 11. Chain hole chamfers ──────────────────────────────────────
+        # ── 11. Body chamfer: front-face outer perimeter ────────────────
+        if p.FRONT_CHAMFER > 0:
+            try:
+                front_outer = (
+                    bp.edges()
+                    .filter_by(GeomType.LINE)
+                    .filter_by_position(Axis.Z, ring_t - 1e-3, ring_t + 1e-3)
+                )
+                if front_outer:
+                    chamfer(front_outer, length=p.FRONT_CHAMFER)
+            except Exception:
+                pass
+
+        # ── 13. Chain hole chamfers ──────────────────────────────────────
         if p.LANYARD_CHAMFER > 0:
             for lh_y in (lh_y1, lh_y2):
                 try:
@@ -349,6 +428,52 @@ def build_core(p: HexaParams = P):
                         mode=Mode.SUBTRACT,
                     )
 
+                # Example text on each core facet (same fields as ring).
+                label = FACET_EXAMPLES.get(i, "")
+                if label:
+                    try:
+                        font_size = min(1.2, c_engrave_h * 0.45)
+                        normal_v  = Vector(math.cos(alpha_rad), math.sin(alpha_rad), 0.0)
+                        x_dir_v   = Vector(-math.sin(alpha_rad), math.cos(alpha_rad), 0.0)
+                        text_origin = Vector(
+                            (core_apo - p.CORE_ENGRAVE_DEPTH) * math.cos(alpha_rad),
+                            (core_apo - p.CORE_ENGRAVE_DEPTH) * math.sin(alpha_rad),
+                            z0 + core_h / 2,
+                        )
+                        text_plane = Plane(
+                            origin=text_origin, x_dir=x_dir_v, z_dir=normal_v
+                        )
+                        with BuildSketch(text_plane):
+                            Text(label, font_size=font_size,
+                                 align=(Align.CENTER, Align.CENTER))
+                        extrude(amount=-p.CORE_ENGRAVE_DEPTH, mode=Mode.SUBTRACT)
+                    except Exception:
+                        pass
+
+        # ── 5. Rotation indicator: "TURN" engraved on core front face ───
+        # Visible through the open ring front (ADR-0042) — tells owner to twist.
+        try:
+            core_top = z0 + core_h
+            with BuildSketch(Plane.XY.offset(core_top)):
+                Text("TURN", font_size=1.4, align=(Align.CENTER, Align.CENTER))
+            extrude(amount=-p.CORE_ENGRAVE_DEPTH, mode=Mode.SUBTRACT)
+        except Exception:
+            pass
+
+        # ── 6. Edge chamfers: front and back hex perimeter ───────────────
+        if p.CORE_CHAMFER > 0:
+            for z_level in (z0, z0 + core_h):
+                try:
+                    edges = (
+                        bp.edges()
+                        .filter_by(GeomType.LINE)
+                        .filter_by_position(Axis.Z, z_level - 1e-3, z_level + 1e-3)
+                    )
+                    if edges:
+                        chamfer(edges, length=p.CORE_CHAMFER)
+                except Exception:
+                    pass
+
     part = bp.part
     part.color = _COLOR_CORE
     part = part.rotate(Axis.Z, 90)   # match ring orientation
@@ -381,27 +506,14 @@ def build_chain_stubs(p: HexaParams = P) -> Compound:
 
     parts = []
     for lh_y in (lh_y1, lh_y2):
-        # Coordinates rotated 90° CCW: (lh_cx, lh_y) → (-lh_y, lh_cx)
-        with BuildPart() as seg_above:
-            with Locations(Location(Vector(-lh_y, lh_cx, ring_t + stub_len / 2))):
-                Cylinder(radius=chain_r, height=stub_len)
-        seg_above.part.color = _COLOR_CHAIN
-        parts.append(seg_above.part)
+        lh_x_rot = -lh_y
+        parts += _ball_chain_y(lh_x_rot, lh_cx, 0.0, stub_len, _COLOR_CHAIN,
+                               p.CHAIN_BALL_D, p.CHAIN_NECK_D)
 
-        below_len = abs(bridge_z)
-        with BuildPart() as seg_below:
-            with Locations(Location(Vector(-lh_y, lh_cx, bridge_z + below_len / 2))):
-                Cylinder(radius=chain_r, height=below_len)
-        seg_below.part.color = _COLOR_CHAIN
-        parts.append(seg_below.part)
-
+    bridge_x0 = -abs(lh_y1)
     bridge_span = abs(lh_y1 - lh_y2)
-    with BuildPart() as bridge:
-        # Bridge now runs in X direction at (0, lh_cx): rotate cylinder 90° around Y
-        with Locations(Location(Vector(0.0, lh_cx, bridge_z), Vector(0, 1, 0), 90)):
-            Cylinder(radius=chain_r, height=bridge_span)
-    bridge.part.color = _COLOR_CHAIN
-    parts.append(bridge.part)
+    parts += _ball_chain_x(bridge_x0, lh_cx, -chain_r, bridge_span, _COLOR_CHAIN,
+                           p.CHAIN_BALL_D, p.CHAIN_NECK_D)
 
     return Compound(children=parts)
 
@@ -423,33 +535,137 @@ def build_worn(p: HexaParams = P) -> Compound:
     lh_y1    = +p.CHAIN_HOLE_SPACING / 2
     lh_y2    = -p.CHAIN_HOLE_SPACING / 2
     chain_r  = p.CHAIN_NECK_D / 2
-    stub_len = 30.0   # mm each chain segment above/below
+    stub_len = 30.0   # mm above the mounting tab toward the neck
     ring_t   = p.RING_T
-    bridge_z = -4.0   # mm below back face for the bridge
 
     parts = [ring, core]
 
+    # Ball chain: exits back face, goes upward (+Y) toward the neck.
     for lh_y in (lh_y1, lh_y2):
-        # Coordinates rotated 90° CCW to match rotated ring: (lh_cx, lh_y) → (-lh_y, lh_cx)
-        with BuildPart() as seg_above:
-            with Locations(Location(Vector(-lh_y, lh_cx, ring_t + stub_len / 2))):
-                Cylinder(radius=chain_r, height=stub_len)
-        seg_above.part.color = _COLOR_CHAIN
-        parts.append(seg_above.part)
+        lh_x_rot = -lh_y
+        parts += _ball_chain_y(lh_x_rot, lh_cx, 0.0, stub_len, _COLOR_CHAIN,
+                               p.CHAIN_BALL_D, p.CHAIN_NECK_D)
 
-        below_len = abs(bridge_z)
-        with BuildPart() as seg_below:
-            with Locations(Location(Vector(-lh_y, lh_cx, bridge_z + below_len / 2))):
-                Cylinder(radius=chain_r, height=below_len)
-        seg_below.part.color = _COLOR_CHAIN
-        parts.append(seg_below.part)
-
-    # Bridge runs in X direction at (0, lh_cx) after rotation
+    # Bridge: short X-direction ball chain at the back face connecting both holes.
+    bridge_x0 = -abs(lh_y1)
     bridge_span = abs(lh_y1 - lh_y2)
-    with BuildPart() as bridge:
-        with Locations(Location(Vector(0.0, lh_cx, bridge_z), Vector(0, 1, 0), 90)):
-            Cylinder(radius=chain_r, height=bridge_span)
-    bridge.part.color = _COLOR_CHAIN
-    parts.append(bridge.part)
+    parts += _ball_chain_x(bridge_x0, lh_cx, -chain_r, bridge_span, _COLOR_CHAIN,
+                           p.CHAIN_BALL_D, p.CHAIN_NECK_D)
 
     return Compound(children=parts)
+
+
+# ---------------------------------------------------------------------------
+# Electronics / RFID internals (ADR-0003, ADR-0038, ADR-0045)
+# ---------------------------------------------------------------------------
+
+def build_ring_electronics(p: HexaParams = P) -> Compound:
+    """Chip A NFC IC + slotted-ring antenna trace, positioned inside the ring.
+
+    Origin matches build_ring(): back face at z=0, rotated 90° CCW.
+    - Black IC package in the Chip A recess on the back face.
+    - Copper hex loop tracing the RF current path around the inner bore.
+    """
+    inner_ac  = p.RING_INNER_ACROSS_CORNERS
+    inner_apo = _hex_apothem(inner_ac)
+    outer_apo = _hex_apothem(p.RING_ACROSS_CORNERS)
+    chip_a_cy = (outer_apo + inner_apo) / 2
+
+    parts = []
+
+    # Chip A: NFC IC package in back-face recess
+    try:
+        with BuildPart() as chip_bp:
+            with Locations(Location(Vector(0.0, chip_a_cy, p.CHIP_A_RECESS_T / 2))):
+                Box(5.0, 4.0, p.CHIP_A_RECESS_T)
+        chip_bp.part.color = _COLOR_CHIP
+        parts.append(chip_bp.part)
+    except Exception:
+        pass
+
+    # Ring antenna trace: copper hex loop around the inner bore.
+    # The slotted-ring antenna uses the Ti ring as its inductive element;
+    # this represents the matching/feed trace interrupted at the slot (+Y face).
+    ant_trace_w = 1.4
+    ant_h       = 0.6
+    ant_z       = 0.3
+    ant_r_outer = inner_ac / 2 - 0.2
+    ant_r_inner = ant_r_outer - ant_trace_w
+
+    try:
+        with BuildPart() as ant_bp:
+            with BuildSketch(Plane.XY.offset(ant_z)):
+                RegularPolygon(radius=ant_r_outer, side_count=6,
+                               align=(Align.CENTER, Align.CENTER))
+            extrude(amount=ant_h)
+            with BuildSketch(Plane.XY.offset(ant_z)):
+                RegularPolygon(radius=ant_r_inner, side_count=6,
+                               align=(Align.CENTER, Align.CENTER))
+            extrude(amount=ant_h + 0.02, mode=Mode.SUBTRACT)
+            with Locations(Location(Vector(0.0, inner_apo, ant_z + ant_h / 2))):
+                Box(p.ANTENNA_SLOT_W + 0.5, ant_trace_w * 2 + 0.5, ant_h + 0.04,
+                    mode=Mode.SUBTRACT)
+        ant_bp.part.color = _COLOR_COPPER
+        parts.append(ant_bp.part)
+    except Exception:
+        pass
+
+    result = Compound(children=parts)
+    return result.rotate(Axis.Z, 90)
+
+
+def build_core_electronics(p: HexaParams = P) -> Compound:
+    """Chip B NFC IC + flat spiral coil antenna, positioned on the core face.
+
+    Origin matches build_core(): back face at z=0, rotated 90° CCW.
+    - Black IC package in the Chip B recess on the core front face.
+    - Three concentric copper hex loops representing the flat NFC coil.
+    """
+    core_ac  = p.CORE_ACROSS_CORNERS
+    core_apo = _hex_apothem(core_ac)
+    z0       = p.RING_FACE_T
+    core_top = z0 + p.CORE_T
+
+    parts = []
+
+    # Chip B: NFC IC package in front-face recess
+    try:
+        with BuildPart() as chip_bp:
+            with Locations(Location(Vector(0.0, 0.0, core_top - p.CHIP_B_RECESS_T / 2))):
+                Box(4.0, 4.0, p.CHIP_B_RECESS_T)
+        chip_bp.part.color = _COLOR_CHIP
+        parts.append(chip_bp.part)
+    except Exception:
+        pass
+
+    # Flat coil: three concentric copper hex loops on the core front face.
+    coil_z  = core_top - 0.08
+    coil_t  = 0.14
+    trace_w = 0.5
+    for r_frac in (0.82, 0.63, 0.44):
+        r_outer = core_apo * r_frac
+        r_inner = r_outer - trace_w
+        if r_inner < 1.5:
+            continue
+        try:
+            with BuildPart() as loop_bp:
+                with BuildSketch(Plane.XY.offset(coil_z)):
+                    RegularPolygon(radius=r_outer, side_count=6,
+                                   align=(Align.CENTER, Align.CENTER))
+                extrude(amount=coil_t)
+                with BuildSketch(Plane.XY.offset(coil_z)):
+                    RegularPolygon(radius=r_inner, side_count=6,
+                                   align=(Align.CENTER, Align.CENTER))
+                extrude(amount=coil_t + 0.02, mode=Mode.SUBTRACT)
+            loop_bp.part.color = _COLOR_COPPER
+            parts.append(loop_bp.part)
+        except Exception:
+            pass
+
+    result = Compound(children=parts)
+    return result.rotate(Axis.Z, 90)
+
+
+def build_electronics(p: HexaParams = P) -> Compound:
+    """All RFID electronics in assembly position: Chip A + ring antenna + Chip B + coil."""
+    return Compound(children=[build_ring_electronics(p), build_core_electronics(p)])

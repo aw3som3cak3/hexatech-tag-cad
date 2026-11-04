@@ -139,6 +139,12 @@ class HexaParams:
     BODY_CHAMFER: float = 0.4
     """mm  chamfer on outer perimeter edges of the back (skin-side) face."""
 
+    FRONT_CHAMFER: float = 0.3
+    """mm  chamfer on outer perimeter edges of the ring's front (open) face."""
+
+    CORE_CHAMFER: float = 0.3
+    """mm  chamfer on the front and back hex edges of the core body."""
+
     CHAIN_HOLE_SPACING: float = 6.0
     """mm  centre-to-centre distance between the two chain holes at the top vertex.
     Chain threads through both holes so the tag hangs flat and cannot rotate."""
