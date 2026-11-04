@@ -190,8 +190,8 @@ def build_ring(p: HexaParams = P):
     Features:
     - Hollow hex prism; front face plate removed when RING_FRONT_OPEN (ADR-0042)
     - Circumferential parting-line groove at z=RING_FACE_T (ADR-0042)
-    - Slotted-ring antenna slot through the +Y flat face
-    - Chip A recess on the back face (inner rim side, +Y quadrant)
+    - No antenna slot (ADR-0048 Construction B — Ti shell + polymer carrier)
+    - All six facets carry engraving (ADR-0053 — SURNAME restored to face 0)
     - Mounting tab at +X vertex with two chain holes (chain threads through both)
     - Engraving relief zones + example text on each of the 6 rim facets
     - TURN / PULL instruction engraved on back face (ADR-0043)
@@ -286,15 +286,11 @@ def build_ring(p: HexaParams = P):
             except Exception:
                 pass  # cosmetic; skip if unsupported
 
-        # ── 5. Antenna slot: radial cut on +Y flat face, full height ────
-        slot_cy = outer_apo - p.ANTENNA_SLOT_D / 2
-        with Locations(Location(Vector(0.0, slot_cy, ring_t / 2))):
-            Box(
-                p.ANTENNA_SLOT_W,
-                p.ANTENNA_SLOT_D + 0.02,
-                ring_t + 0.02,
-                mode=Mode.SUBTRACT,
-            )
+        # ── 5. Antenna slot: removed in Construction B (ADR-0048) ────────
+        #    Ti outer shell + polymer inner carrier uses a flat coil antenna;
+        #    the slot is not present. Retained here as a no-op comment so the
+        #    step number stays stable for Construction A prototype comparisons.
+        pass
 
         # ── 6. Chip A recess: shallow pocket on back face (+Y rim zone) ─
         with Locations(Location(Vector(0.0, chip_a_cy, p.CHIP_A_RECESS_T / 2))):
@@ -320,8 +316,6 @@ def build_ring(p: HexaParams = P):
         # Facet 0 (alpha=90°, +Y face) carries the antenna slot — no engrave pocket there.
         if engrave_w > 0 and engrave_h > 0:
             for i in range(p.N_FACETS):
-                if i == 0:
-                    continue          # antenna slot facet: slot already occupies this face
                 alpha_deg = 90.0 - i * 60.0
                 alpha_rad = math.radians(alpha_deg)
                 f_cx = (outer_apo - p.ENGRAVE_DEPTH / 2) * math.cos(alpha_rad)
@@ -361,10 +355,15 @@ def build_ring(p: HexaParams = P):
                     except Exception:
                         pass  # text is cosmetic; skip if unsupported
 
-        # ── 9. TURN / PULL instruction on back face (ADR-0043) ──────────
+        # ── 9. PUSH / TURN / PULL instruction on back face (ADR-0050) ───
         try:
             back_text_y = inner_apo * 0.65   # ~9.2 mm from centre, within solid plate
-            for text, ty in (("TURN", back_text_y), ("PULL", -back_text_y)):
+            step_gap    = inner_apo * 0.30   # vertical separation between tokens
+            for text, ty in (
+                ("PUSH",  back_text_y),
+                ("TURN",  back_text_y - step_gap),
+                ("PULL",  back_text_y - 2 * step_gap),
+            ):
                 with BuildSketch(Plane.XY):
                     with Locations(Location(Vector(0.0, ty, 0.0))):
                         Text(text, font_size=1.0,
@@ -632,72 +631,79 @@ _COLOR_PCB = Color(0.07, 0.30, 0.09)
 
 
 def build_ring_electronics(p: HexaParams = P) -> Compound:
-    """Chip A NXP NTAG-I2C bonded across the antenna slot on the ring's back face.
+    """Chip A flat 2-turn hex coil in the ring opening (ADR-0048 Construction B).
 
-    Physical model (pre-rotation, slot at +Y face):
-    - Thin flex PCB patch sits on the back face rim at the +Y face.
-    - Chip A (3.5×2.0×1.2 mm black package) bonded to the PCB, centred on the slot.
-    - Two short copper feed traces bridge the slot gap (each pad → one slot wall).
-    The Ti ring itself is the slotted-ring antenna; no extra copper loop is needed.
+    Physical model (pre-rotation, slot face was at +Y):
+    - Flat 2-turn hex coil sits in the ring opening at z≈0.3mm from back face.
+      Outer turn circumradius ~14mm, inner turn ~11mm (ADR-0048 antenna spec).
+    - Chip A (3.5×2.0×1.2mm) on polymer carrier at the face OPPOSITE the former
+      slot: alpha=270° (the -Y face, facet 3). Fully enclosed in polymer; no
+      exposure at any outer rim cut or groove.
+    - Flex PCB patch on the inner carrier at the -Y rim face.
 
-    After .rotate(Axis.Z, 90): slot face is at −X, chip at x≈−15.8 mm.
+    After .rotate(Axis.Z, 90): coil in opening centred; chip at +X face.
     """
     outer_apo = _hex_apothem(p.RING_ACROSS_CORNERS)
     inner_apo = _hex_apothem(p.RING_INNER_ACROSS_CORNERS)
-    rim_mid_y = (outer_apo + inner_apo) / 2   # ≈ 15.8 mm
-    slot_w    = p.ANTENNA_SLOT_W               # 1.2 mm (circumferential gap)
 
+    # ── Flat hex coil in ring opening ───────────────────────────────────
+    coil_z = 0.3     # from back face
+    coil_h = 0.3     # wire height
+    coil_t = 0.5     # wire radial width
+    # Two turns: outer ~14mm circumradius, inner ~11mm — scaled to inner_apo
+    turn_radii = (inner_apo * 0.99, inner_apo * 0.78)
+
+    # ── Chip A: on face OPPOSITE former slot (alpha=270°, the -Y face) ──
+    chip_face_y  = -(outer_apo + inner_apo) / 2   # midpoint of -Y rim (~-15.8mm)
     chip_w, chip_d, chip_h = 3.5, 2.0, 1.2
-    # Chip embedded at the midpoint of the back-face plate (RING_FACE_T thick).
-    # Offset 0.3mm from back face so it reads as clearly inside the material.
-    embed_z   = 0.3                    # inset from back face surface
-    chip_y    = rim_mid_y
-    chip_z    = embed_z + chip_h / 2   # centre of chip within ring wall
-
-    trace_w = chip_w - slot_w          # total copper bridging both sides ≈ 2.3 mm
-    trace_d = 0.5                      # trace depth (Y) — matches chip pad width
-    trace_h = 0.4
-
-    pcb_w = chip_w + 3.0
-    pcb_d = chip_d + 1.5
-    pcb_h = 0.3
+    embed_z  = 0.3
+    chip_z   = embed_z + chip_h / 2
+    pcb_h    = 0.3
 
     parts = []
 
-    # Flex PCB substrate — inset from back face
+    # Flat hex coil turns (hollow hex prisms approximating wound wire)
+    for r in turn_radii:
+        try:
+            with BuildPart() as coil_bp:
+                with BuildSketch(Plane.XY.offset(coil_z)):
+                    RegularPolygon(
+                        radius=r,
+                        side_count=6,
+                        align=(Align.CENTER, Align.CENTER),
+                    )
+                extrude(amount=coil_h)
+                with BuildSketch(Plane.XY.offset(coil_z - 0.01)):
+                    RegularPolygon(
+                        radius=max(1.0, r - coil_t),
+                        side_count=6,
+                        align=(Align.CENTER, Align.CENTER),
+                    )
+                extrude(amount=coil_h + 0.02, mode=Mode.SUBTRACT)
+            coil_bp.part.color = _COLOR_COPPER
+            parts.append(coil_bp.part)
+        except Exception:
+            pass
+
+    # Flex PCB patch on the -Y rim face (polymer carrier face)
     try:
         with BuildPart() as pcb_bp:
-            with Locations(Location(Vector(0.0, chip_y, embed_z + pcb_h / 2))):
-                Box(pcb_w, pcb_d, pcb_h)
+            with Locations(Location(Vector(0.0, chip_face_y, embed_z + pcb_h / 2))):
+                Box(chip_w + 3.0, chip_d + 1.5, pcb_h)
         pcb_bp.part.color = _COLOR_PCB
         parts.append(pcb_bp.part)
     except Exception:
         pass
 
-    # Chip A body
+    # Chip A body — embedded in polymer carrier at -Y rim face
     try:
         with BuildPart() as chip_bp:
-            with Locations(Location(Vector(0.0, chip_y, chip_z))):
+            with Locations(Location(Vector(0.0, chip_face_y, chip_z))):
                 Box(chip_w, chip_d, chip_h)
         chip_bp.part.color = _COLOR_CHIP
         parts.append(chip_bp.part)
     except Exception:
         pass
-
-    # Two copper bond traces crossing the slot gap (one per antenna pad)
-    for sign in (-1.0, +1.0):
-        x_pad  = sign * chip_w / 2        # chip pad edge: ±1.75 mm
-        x_slot = sign * slot_w / 2        # slot wall:     ±0.60 mm
-        trace_len = abs(x_pad - x_slot)   # ≈ 1.15 mm
-        trace_cx  = (x_pad + x_slot) / 2
-        try:
-            with BuildPart() as tr_bp:
-                with Locations(Location(Vector(trace_cx, chip_y, chip_z))):
-                    Box(trace_len, trace_d, trace_h)
-            tr_bp.part.color = _COLOR_COPPER
-            parts.append(tr_bp.part)
-        except Exception:
-            pass
 
     result = Compound(children=parts)
     return result.rotate(Axis.Z, 90)
