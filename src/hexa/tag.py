@@ -40,8 +40,10 @@ from build123d import (
     extrude,
 )
 
-# Titanium Gr5 / 316L stainless — cool mid-grey with slight blue tint
-_COLOR_METAL = Color(0.72, 0.72, 0.76)
+# Ring: natural bead-blast Ti Gr5 — stays with casualty
+_COLOR_RING  = Color(0.72, 0.72, 0.76)
+# Core: Ti Type II anodize 60–70 V (Pantone 2727 C / RAL 5005 Signal Blue) — travels to records
+_COLOR_CORE  = Color(0.18, 0.38, 0.72)
 # Stainless ball chain — slightly warmer steel grey
 _COLOR_CHAIN = Color(0.65, 0.65, 0.67)
 
@@ -207,7 +209,7 @@ def build_ring(p: HexaParams = P):
                     pass  # chamfer is a cosmetic feature; skip gracefully if unsupported
 
     part = bp.part
-    part.color = _COLOR_METAL
+    part.color = _COLOR_RING
     return part
 
 
@@ -296,7 +298,7 @@ def build_core(p: HexaParams = P):
                     )
 
     part = bp.part
-    part.color = _COLOR_METAL
+    part.color = _COLOR_CORE
     return part
 
 

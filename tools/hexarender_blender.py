@@ -34,10 +34,11 @@ SAMPLES = int(flagga("--samples", 96))
 LINS    = float(flagga("--lins", 85))
 LJUS    = float(flagga("--ljus", 1.0))
 
-# tag.py: _COLOR_METAL = Color(0.72, 0.72, 0.76), _COLOR_CHAIN = Color(0.65, 0.65, 0.67)
+# tag.py: _COLOR_RING (grey), _COLOR_CORE (blue), _COLOR_CHAIN
+# Ring: natural bead-blast Ti Gr5; Core: Ti anodize 60-70V = Pantone 2727 C / RAL 5005
 MATERIAL = {
-    "ring":  ((0.72, 0.72, 0.76, 1), 0.15, 0.85),
-    "core":  ((0.72, 0.72, 0.76, 1), 0.15, 0.85),
+    "ring":  ((0.72, 0.72, 0.76, 1), 0.20, 0.80),  # bead-blast Ti — slightly rougher
+    "core":  ((0.18, 0.38, 0.72, 1), 0.10, 0.75),  # anodized blue Ti — smoother, slight metallic
     "chain": ((0.65, 0.65, 0.67, 1), 0.20, 0.90),
 }
 
