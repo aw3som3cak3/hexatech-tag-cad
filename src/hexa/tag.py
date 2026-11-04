@@ -97,6 +97,32 @@ def _ball_chain_y(x: float, y_start: float, z: float,
     return parts
 
 
+def _ball_chain_y_neg(x: float, y_start: float, z: float,
+                      length: float, color: Color,
+                      ball_d: float, neck_d: float) -> list:
+    """Return ball chain parts along -Y from (x, y_start, z)."""
+    neck_len = neck_d * 0.6
+    pitch = ball_d + neck_len
+    n_beads = max(1, int(length / pitch))
+    parts = []
+    for i in range(n_beads):
+        cy = y_start - (i * pitch + ball_d / 2)
+        with BuildPart() as bead:
+            with Locations(Location(Vector(x, cy, z))):
+                Sphere(radius=ball_d / 2)
+        bead.part.color = color
+        parts.append(bead.part)
+        if i < n_beads - 1:
+            ny = cy - ball_d / 2
+            with BuildPart() as neck:
+                with Locations(Location(Vector(x, ny - neck_len / 2, z),
+                                        Vector(1, 0, 0), 90)):
+                    Cylinder(radius=neck_d / 2, height=neck_len)
+            neck.part.color = color
+            parts.append(neck.part)
+    return parts
+
+
 def _ball_chain_x(x_start: float, y: float, z: float,
                   length: float, color: Color,
                   ball_d: float, neck_d: float) -> list:
@@ -504,16 +530,22 @@ def build_chain_stubs(p: HexaParams = P) -> Compound:
     ring_t   = p.RING_T
     bridge_z = -4.0
 
+    lower_len = 8.0  # chain loops below the mounting tab before bridging
+    ball_d    = p.CHAIN_BALL_D
+
     parts = []
     for lh_y in (lh_y1, lh_y2):
         lh_x_rot = -lh_y
         parts += _ball_chain_y(lh_x_rot, lh_cx, 0.0, stub_len, _COLOR_CHAIN,
-                               p.CHAIN_BALL_D, p.CHAIN_NECK_D)
+                               ball_d, p.CHAIN_NECK_D)
+        parts += _ball_chain_y_neg(lh_x_rot, lh_cx, 0.0, lower_len, _COLOR_CHAIN,
+                                   ball_d, p.CHAIN_NECK_D)
 
-    bridge_x0 = -abs(lh_y1)
-    bridge_span = abs(lh_y1 - lh_y2)
-    parts += _ball_chain_x(bridge_x0, lh_cx, -chain_r, bridge_span, _COLOR_CHAIN,
-                           p.CHAIN_BALL_D, p.CHAIN_NECK_D)
+    bridge_y    = lh_cx - lower_len
+    bridge_x0   = -abs(lh_y1) - ball_d
+    bridge_span = abs(lh_y1 - lh_y2) + 2 * ball_d
+    parts += _ball_chain_x(bridge_x0, bridge_y, -chain_r, bridge_span, _COLOR_CHAIN,
+                           ball_d, p.CHAIN_NECK_D)
 
     return Compound(children=parts)
 
@@ -538,19 +570,29 @@ def build_worn(p: HexaParams = P) -> Compound:
     stub_len = 30.0   # mm above the mounting tab toward the neck
     ring_t   = p.RING_T
 
+    lower_len = 8.0  # mm the chain loops below the mounting tab before bridging
+    ball_d    = p.CHAIN_BALL_D
+
     parts = [ring, core]
 
-    # Ball chain: exits back face, goes upward (+Y) toward the neck.
+    # Upward stubs: chain comes from the neck, enters each hole from above.
     for lh_y in (lh_y1, lh_y2):
         lh_x_rot = -lh_y
         parts += _ball_chain_y(lh_x_rot, lh_cx, 0.0, stub_len, _COLOR_CHAIN,
-                               p.CHAIN_BALL_D, p.CHAIN_NECK_D)
+                               ball_d, p.CHAIN_NECK_D)
 
-    # Bridge: short X-direction ball chain at the back face connecting both holes.
-    bridge_x0 = -abs(lh_y1)
-    bridge_span = abs(lh_y1 - lh_y2)
-    parts += _ball_chain_x(bridge_x0, lh_cx, -chain_r, bridge_span, _COLOR_CHAIN,
-                           p.CHAIN_BALL_D, p.CHAIN_NECK_D)
+    # Downward stubs: chain exits each hole downward, looping below the tab.
+    for lh_y in (lh_y1, lh_y2):
+        lh_x_rot = -lh_y
+        parts += _ball_chain_y_neg(lh_x_rot, lh_cx, 0.0, lower_len, _COLOR_CHAIN,
+                                   ball_d, p.CHAIN_NECK_D)
+
+    # Bridge: connects the two downward stubs below the tab, slightly behind the back face.
+    bridge_y    = lh_cx - lower_len
+    bridge_x0   = -abs(lh_y1) - ball_d
+    bridge_span = abs(lh_y1 - lh_y2) + 2 * ball_d
+    parts += _ball_chain_x(bridge_x0, bridge_y, -chain_r, bridge_span, _COLOR_CHAIN,
+                           ball_d, p.CHAIN_NECK_D)
 
     return Compound(children=parts)
 
@@ -573,11 +615,11 @@ def build_ring_electronics(p: HexaParams = P) -> Compound:
 
     parts = []
 
-    # Chip A: NFC IC package in back-face recess
+    # Chip A: NFC IC package in back-face recess — scaled up for visibility
     try:
         with BuildPart() as chip_bp:
-            with Locations(Location(Vector(0.0, chip_a_cy, p.CHIP_A_RECESS_T / 2))):
-                Box(5.0, 4.0, p.CHIP_A_RECESS_T)
+            with Locations(Location(Vector(0.0, chip_a_cy, 1.0))):
+                Box(5.0, 4.0, 2.0)
         chip_bp.part.color = _COLOR_CHIP
         parts.append(chip_bp.part)
     except Exception:
@@ -587,8 +629,8 @@ def build_ring_electronics(p: HexaParams = P) -> Compound:
     # The slotted-ring antenna uses the Ti ring as its inductive element;
     # this represents the matching/feed trace interrupted at the slot (+Y face).
     ant_trace_w = 1.4
-    ant_h       = 0.6
-    ant_z       = 0.3
+    ant_h       = 1.5
+    ant_z       = 0.5
     ant_r_outer = inner_ac / 2 - 0.2
     ant_r_inner = ant_r_outer - ant_trace_w
 
@@ -628,20 +670,20 @@ def build_core_electronics(p: HexaParams = P) -> Compound:
 
     parts = []
 
-    # Chip B: NFC IC package in front-face recess
+    # Chip B: NFC IC package on front face — scaled up for visibility
     try:
         with BuildPart() as chip_bp:
-            with Locations(Location(Vector(0.0, 0.0, core_top - p.CHIP_B_RECESS_T / 2))):
-                Box(4.0, 4.0, p.CHIP_B_RECESS_T)
+            with Locations(Location(Vector(0.0, 0.0, core_top + 1.0))):
+                Box(4.0, 4.0, 2.0)
         chip_bp.part.color = _COLOR_CHIP
         parts.append(chip_bp.part)
     except Exception:
         pass
 
     # Flat coil: three concentric copper hex loops on the core front face.
-    coil_z  = core_top - 0.08
-    coil_t  = 0.14
-    trace_w = 0.5
+    coil_z  = core_top + 0.1
+    coil_t  = 0.5
+    trace_w = 0.9
     for r_frac in (0.82, 0.63, 0.44):
         r_outer = core_apo * r_frac
         r_inner = r_outer - trace_w
