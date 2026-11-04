@@ -649,9 +649,11 @@ def build_ring_electronics(p: HexaParams = P) -> Compound:
     slot_w    = p.ANTENNA_SLOT_W               # 1.2 mm (circumferential gap)
 
     chip_w, chip_d, chip_h = 3.5, 2.0, 1.2
-    # Chip is recessed into the back face — sits from z=0 inward (away from parting groove at z=1.2mm)
-    chip_y = rim_mid_y
-    chip_z = chip_h / 2            # chip spans z=0 (back face) to z=chip_h=1.2mm
+    # Chip embedded at the midpoint of the back-face plate (RING_FACE_T thick).
+    # Offset 0.3mm from back face so it reads as clearly inside the material.
+    embed_z   = 0.3                    # inset from back face surface
+    chip_y    = rim_mid_y
+    chip_z    = embed_z + chip_h / 2   # centre of chip within ring wall
 
     trace_w = chip_w - slot_w          # total copper bridging both sides ≈ 2.3 mm
     trace_d = 0.5                      # trace depth (Y) — matches chip pad width
@@ -663,10 +665,10 @@ def build_ring_electronics(p: HexaParams = P) -> Compound:
 
     parts = []
 
-    # Flex PCB substrate
+    # Flex PCB substrate — inset from back face
     try:
         with BuildPart() as pcb_bp:
-            with Locations(Location(Vector(0.0, chip_y, pcb_h / 2))):
+            with Locations(Location(Vector(0.0, chip_y, embed_z + pcb_h / 2))):
                 Box(pcb_w, pcb_d, pcb_h)
         pcb_bp.part.color = _COLOR_PCB
         parts.append(pcb_bp.part)
@@ -723,7 +725,10 @@ def build_core_electronics(p: HexaParams = P) -> Compound:
 
     coil_t  = 0.4                # coil trace height
     trace_w = 0.65               # coil trace width (radial)
-    coil_z  = core_top - coil_t  # coil is on the INSIDE of the core front face
+    # Place electronics at 0.4mm above the core BACK face (z0), well inside the core body.
+    # core spans z0=1.2mm → core_top=4.0mm; centring at z0+0.4 reads clearly as embedded.
+    embed_z = z0 + 0.4
+    coil_z  = embed_z
 
     # 4 turns: circumradii as fractions of core_apo
     r_fracs = (0.84, 0.69, 0.54, 0.39)
@@ -731,16 +736,16 @@ def build_core_electronics(p: HexaParams = P) -> Compound:
     chip_w, chip_d, chip_h = 3.5, 2.5, 1.2
     chip_y = core_apo * 0.52     # offset toward +Y (pre-rotation)
     chip_x = 0.0
-    chip_z = core_top - chip_h / 2  # chip embedded in front face, top flush with core_top
+    chip_z = embed_z + chip_h / 2  # chip sits on the coil PCB, deep inside core
 
     pcb_r  = core_apo * 0.92     # flex PCB hex radius ≈ core face
 
     parts = []
 
-    # Flex PCB base layer on the inside of the core front face
+    # Flex PCB base layer embedded inside the core body
     try:
         with BuildPart() as pcb_bp:
-            with BuildSketch(Plane.XY.offset(coil_z - 0.25)):
+            with BuildSketch(Plane.XY.offset(embed_z - 0.25)):
                 RegularPolygon(radius=pcb_r, side_count=6,
                                align=(Align.CENTER, Align.CENTER))
             extrude(amount=0.25)
