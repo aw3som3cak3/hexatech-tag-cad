@@ -600,97 +600,141 @@ def build_worn(p: HexaParams = P) -> Compound:
 # ---------------------------------------------------------------------------
 # Electronics / RFID internals (ADR-0003, ADR-0038, ADR-0045)
 # ---------------------------------------------------------------------------
+# Green FR4 PCB substrate colour (NFC flex PCB that carries chip + coil)
+_COLOR_PCB = Color(0.07, 0.30, 0.09)
+
 
 def build_ring_electronics(p: HexaParams = P) -> Compound:
-    """Chip A NFC IC + slotted-ring antenna trace, positioned inside the ring.
+    """Chip A NXP NTAG-I2C bonded across the antenna slot on the ring's back face.
 
-    Origin matches build_ring(): back face at z=0, rotated 90° CCW.
-    - Black IC package in the Chip A recess on the back face.
-    - Copper hex loop tracing the RF current path around the inner bore.
+    Physical model (pre-rotation, slot at +Y face):
+    - Thin flex PCB patch sits on the back face rim at the +Y face.
+    - Chip A (3.5×2.0×1.2 mm black package) bonded to the PCB, centred on the slot.
+    - Two short copper feed traces bridge the slot gap (each pad → one slot wall).
+    The Ti ring itself is the slotted-ring antenna; no extra copper loop is needed.
+
+    After .rotate(Axis.Z, 90): slot face is at −X, chip at x≈−15.8 mm.
     """
-    inner_ac  = p.RING_INNER_ACROSS_CORNERS
-    inner_apo = _hex_apothem(inner_ac)
     outer_apo = _hex_apothem(p.RING_ACROSS_CORNERS)
-    chip_a_cy = (outer_apo + inner_apo) / 2
+    inner_apo = _hex_apothem(p.RING_INNER_ACROSS_CORNERS)
+    rim_mid_y = (outer_apo + inner_apo) / 2   # ≈ 15.8 mm
+    slot_w    = p.ANTENNA_SLOT_W               # 1.2 mm (circumferential gap)
+
+    chip_w, chip_d, chip_h = 3.5, 2.0, 1.2
+    # Chip sits slightly above the back face, centred on the slot face
+    chip_y = rim_mid_y
+    chip_z = chip_h / 2 + 0.3
+
+    trace_w = chip_w - slot_w          # total copper bridging both sides ≈ 2.3 mm
+    trace_d = 0.5                      # trace depth (Y) — matches chip pad width
+    trace_h = 0.4
+
+    pcb_w = chip_w + 3.0
+    pcb_d = chip_d + 1.5
+    pcb_h = 0.3
 
     parts = []
 
-    # Chip A: NFC IC package in back-face recess — scaled up for visibility
+    # Flex PCB substrate
+    try:
+        with BuildPart() as pcb_bp:
+            with Locations(Location(Vector(0.0, chip_y, pcb_h / 2))):
+                Box(pcb_w, pcb_d, pcb_h)
+        pcb_bp.part.color = _COLOR_PCB
+        parts.append(pcb_bp.part)
+    except Exception:
+        pass
+
+    # Chip A body
     try:
         with BuildPart() as chip_bp:
-            with Locations(Location(Vector(0.0, chip_a_cy, 1.0))):
-                Box(5.0, 4.0, 2.0)
+            with Locations(Location(Vector(0.0, chip_y, chip_z))):
+                Box(chip_w, chip_d, chip_h)
         chip_bp.part.color = _COLOR_CHIP
         parts.append(chip_bp.part)
     except Exception:
         pass
 
-    # Ring antenna trace: copper hex loop around the inner bore.
-    # The slotted-ring antenna uses the Ti ring as its inductive element;
-    # this represents the matching/feed trace interrupted at the slot (+Y face).
-    ant_trace_w = 1.4
-    ant_h       = 1.5
-    ant_z       = 0.5
-    ant_r_outer = inner_ac / 2 - 0.2
-    ant_r_inner = ant_r_outer - ant_trace_w
-
-    try:
-        with BuildPart() as ant_bp:
-            with BuildSketch(Plane.XY.offset(ant_z)):
-                RegularPolygon(radius=ant_r_outer, side_count=6,
-                               align=(Align.CENTER, Align.CENTER))
-            extrude(amount=ant_h)
-            with BuildSketch(Plane.XY.offset(ant_z)):
-                RegularPolygon(radius=ant_r_inner, side_count=6,
-                               align=(Align.CENTER, Align.CENTER))
-            extrude(amount=ant_h + 0.02, mode=Mode.SUBTRACT)
-            with Locations(Location(Vector(0.0, inner_apo, ant_z + ant_h / 2))):
-                Box(p.ANTENNA_SLOT_W + 0.5, ant_trace_w * 2 + 0.5, ant_h + 0.04,
-                    mode=Mode.SUBTRACT)
-        ant_bp.part.color = _COLOR_COPPER
-        parts.append(ant_bp.part)
-    except Exception:
-        pass
+    # Two copper bond traces crossing the slot gap (one per antenna pad)
+    for sign in (-1.0, +1.0):
+        x_pad  = sign * chip_w / 2        # chip pad edge: ±1.75 mm
+        x_slot = sign * slot_w / 2        # slot wall:     ±0.60 mm
+        trace_len = abs(x_pad - x_slot)   # ≈ 1.15 mm
+        trace_cx  = (x_pad + x_slot) / 2
+        try:
+            with BuildPart() as tr_bp:
+                with Locations(Location(Vector(trace_cx, chip_y, chip_z))):
+                    Box(trace_len, trace_d, trace_h)
+            tr_bp.part.color = _COLOR_COPPER
+            parts.append(tr_bp.part)
+        except Exception:
+            pass
 
     result = Compound(children=parts)
     return result.rotate(Axis.Z, 90)
 
 
 def build_core_electronics(p: HexaParams = P) -> Compound:
-    """Chip B NFC IC + flat spiral coil antenna, positioned on the core face.
+    """Chip B NXP NTAG213 + 4-turn flat hex spiral coil on the core front face.
 
-    Origin matches build_core(): back face at z=0, rotated 90° CCW.
-    - Black IC package in the Chip B recess on the core front face.
-    - Three concentric copper hex loops representing the flat NFC coil.
+    Physical model (pre-rotation):
+    - Flex PCB covers the core front face (z = core_top).
+    - 4 hex coil turns of decreasing radius, each with a gap at the −Y face.
+    - Adjacent turns connected by short radial bridge traces at the gap face.
+    - Chip B (3.5×2.5×1.2 mm) sits on the PCB, offset toward +Y.
+    - Feed trace connects outermost turn to chip pad 1.
+    - Return trace at higher Z connects innermost turn to chip pad 2.
+
+    After .rotate(Axis.Z, 90): gap/bridges at +X, chip at x≈−7 mm.
     """
     core_ac  = p.CORE_ACROSS_CORNERS
-    core_apo = _hex_apothem(core_ac)
-    z0       = p.RING_FACE_T
-    core_top = z0 + p.CORE_T
+    core_apo = _hex_apothem(core_ac)         # ≈ 14.17 mm
+    z0       = p.RING_FACE_T                 # 1.2 mm
+    core_top = z0 + p.CORE_T                 # 4.0 mm
+    apo_frac = math.cos(math.radians(30))    # 0.866
+
+    coil_z  = core_top - 0.08    # coil sits at/just inside core front face
+    coil_t  = 0.4                # coil trace height
+    trace_w = 0.65               # coil trace width (radial)
+
+    # 4 turns: circumradii as fractions of core_apo
+    r_fracs = (0.84, 0.69, 0.54, 0.39)
+
+    chip_w, chip_d, chip_h = 3.5, 2.5, 1.2
+    chip_y = core_apo * 0.52     # offset toward +Y (pre-rotation)
+    chip_x = 0.0
+    chip_z = core_top + chip_h / 2 + 0.1
+
+    pcb_r  = core_apo * 0.92     # flex PCB hex radius ≈ core face
 
     parts = []
 
-    # Chip B: NFC IC package on front face — scaled up for visibility
+    # Flex PCB base layer covering the core face
     try:
-        with BuildPart() as chip_bp:
-            with Locations(Location(Vector(0.0, 0.0, core_top + 1.0))):
-                Box(4.0, 4.0, 2.0)
-        chip_bp.part.color = _COLOR_CHIP
-        parts.append(chip_bp.part)
+        with BuildPart() as pcb_bp:
+            with BuildSketch(Plane.XY.offset(coil_z - 0.1)):
+                RegularPolygon(radius=pcb_r, side_count=6,
+                               align=(Align.CENTER, Align.CENTER))
+            extrude(amount=0.25)
+        pcb_bp.part.color = _COLOR_PCB
+        parts.append(pcb_bp.part)
     except Exception:
         pass
 
-    # Flat coil: three concentric copper hex loops on the core front face.
-    coil_z  = core_top + 0.1
-    coil_t  = 0.5
-    trace_w = 0.9
-    for r_frac in (0.82, 0.63, 0.44):
+    # 4 coil turns: hex rings with gap at −Y face, radial bridge to next turn
+    for i, r_frac in enumerate(r_fracs):
         r_outer = core_apo * r_frac
         r_inner = r_outer - trace_w
-        if r_inner < 1.5:
+        if r_inner < 1.0:
             continue
+        apo_outer = r_outer * apo_frac
+        apo_inner = r_inner * apo_frac
+        # Gap box cut at −Y flat face of this ring
+        gap_cx_y  = -(apo_inner + (apo_outer - apo_inner) / 2)
+        gap_w_cut = trace_w + 1.6
+        gap_d_cut = apo_outer - apo_inner + 0.3
         try:
-            with BuildPart() as loop_bp:
+            with BuildPart() as ring_bp:
                 with BuildSketch(Plane.XY.offset(coil_z)):
                     RegularPolygon(radius=r_outer, side_count=6,
                                    align=(Align.CENTER, Align.CENTER))
@@ -699,8 +743,67 @@ def build_core_electronics(p: HexaParams = P) -> Compound:
                     RegularPolygon(radius=r_inner, side_count=6,
                                    align=(Align.CENTER, Align.CENTER))
                 extrude(amount=coil_t + 0.02, mode=Mode.SUBTRACT)
-            loop_bp.part.color = _COLOR_COPPER
-            parts.append(loop_bp.part)
+                with Locations(Location(Vector(0.0, gap_cx_y, coil_z + coil_t / 2))):
+                    Box(gap_w_cut, gap_d_cut, coil_t + 0.1, mode=Mode.SUBTRACT)
+            ring_bp.part.color = _COLOR_COPPER
+            parts.append(ring_bp.part)
+        except Exception:
+            pass
+
+        # Radial bridge trace to next inner turn at the same gap face
+        if i < len(r_fracs) - 1:
+            r_next_outer = core_apo * r_fracs[i + 1]
+            apo_next_outer = r_next_outer * apo_frac
+            bridge_len = apo_inner - apo_next_outer
+            if bridge_len > 0.05:
+                bridge_cy = -(apo_next_outer + bridge_len / 2)
+                try:
+                    with BuildPart() as br_bp:
+                        with Locations(Location(Vector(0.0, bridge_cy, coil_z + coil_t / 2))):
+                            Box(trace_w, bridge_len + 0.05, coil_t)
+                    br_bp.part.color = _COLOR_COPPER
+                    parts.append(br_bp.part)
+                except Exception:
+                    pass
+
+    # Chip B body
+    try:
+        with BuildPart() as chip_bp:
+            with Locations(Location(Vector(chip_x, chip_y, chip_z))):
+                Box(chip_w, chip_d, chip_h)
+        chip_bp.part.color = _COLOR_CHIP
+        parts.append(chip_bp.part)
+    except Exception:
+        pass
+
+    # Feed trace: outermost ring → chip pad 1 (runs radially outward at +Y)
+    r_out0 = core_apo * r_fracs[0]
+    feed_len = chip_y - r_out0
+    if feed_len > 0.05:
+        try:
+            with BuildPart() as feed_bp:
+                with Locations(Location(Vector(chip_x - chip_w / 4,
+                                               r_out0 + feed_len / 2,
+                                               coil_z + coil_t / 2))):
+                    Box(trace_w, feed_len, coil_t)
+            feed_bp.part.color = _COLOR_COPPER
+            parts.append(feed_bp.part)
+        except Exception:
+            pass
+
+    # Return trace: innermost ring → chip pad 2, routed at higher Z to avoid crossing
+    r_in_last = core_apo * r_fracs[-1]
+    ret_z = coil_z + coil_t + 0.25
+    ret_len = chip_y - r_in_last * 0.5
+    if ret_len > 0.05:
+        try:
+            with BuildPart() as ret_bp:
+                with Locations(Location(Vector(chip_x + chip_w / 4,
+                                               r_in_last * 0.5 + ret_len / 2,
+                                               ret_z))):
+                    Box(trace_w * 0.8, ret_len, 0.3)
+            ret_bp.part.color = _COLOR_COPPER
+            parts.append(ret_bp.part)
         except Exception:
             pass
 
@@ -709,5 +812,19 @@ def build_core_electronics(p: HexaParams = P) -> Compound:
 
 
 def build_electronics(p: HexaParams = P) -> Compound:
-    """All RFID electronics in assembly position: Chip A + ring antenna + Chip B + coil."""
-    return Compound(children=[build_ring_electronics(p), build_core_electronics(p)])
+    """RFID electronics with ghost-transparent ring and core housing.
+
+    Ring and core are shown at ~12% opacity so the internal electronics are
+    visible through them. Alpha exports correctly as GLTF alphaMode BLEND.
+    """
+    ring = build_ring(p)
+    core = build_core(p)
+    # Apply transparent colours — alpha 0.12 (nearly see-through)
+    ring.color = Color(0.72, 0.72, 0.76, 0.12)
+    core.color = Color(0.18, 0.38, 0.72, 0.12)
+    return Compound(children=[
+        ring,
+        core,
+        build_ring_electronics(p),
+        build_core_electronics(p),
+    ])

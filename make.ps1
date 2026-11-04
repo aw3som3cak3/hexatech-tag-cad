@@ -116,10 +116,12 @@ print('STL files written to out/stl/')
         Require-Venv
         $env:PYTHONPATH = "src"
         New-Item -ItemType Directory -Force out/gltf | Out-Null
-        Write-Host "Note: copy out/gltf/* (gltf + bin) to hexatech-site/public/models/ — or run hexarender.py --push"
-        & $python -c "
+        Write-Host "Note: hexarender.py --push copies both .gltf and .bin to the site"
+        $pyGltf = @'
 import build123d as bd
-from hexa.tag import build_ring, build_core, build_assembly, build_exploded, build_worn, build_ring_electronics, build_core_electronics, build_electronics
+from hexa.tag import (build_ring, build_core, build_assembly, build_exploded,
+                      build_worn, build_ring_electronics, build_core_electronics,
+                      build_electronics)
 from hexa.checks import check_all
 check_all()
 bd.export_gltf(build_ring(),               'out/gltf/ring.gltf')
@@ -131,7 +133,8 @@ bd.export_gltf(build_ring_electronics(),   'out/gltf/ring-electronics.gltf')
 bd.export_gltf(build_core_electronics(),   'out/gltf/core-electronics.gltf')
 bd.export_gltf(build_electronics(),        'out/gltf/electronics.gltf')
 print('GLTF files written to out/gltf/')
-"
+'@
+        & $python -c $pyGltf
     }
 
     "clean" {
