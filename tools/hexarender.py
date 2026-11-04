@@ -111,8 +111,17 @@ if __name__ == "__main__":
         print("  %-10s parts=%s  az=%s el=%s -> %s"
               % (s["name"], s["parts"], s["az"], s["el"], s["out"]))
     if "--skriv" not in sys.argv:
-        print("\nDRY RUN. Run with --skriv to render (a few minutes per scene).")
-        raise SystemExit(0)
+        # Push existing renders without re-rendering
+        if "--push" in sys.argv:
+            missing = [s["out"] for s in SCENES if not os.path.exists(s["out"])]
+            if missing:
+                print("\nMissing renders (run with --skriv first):")
+                for p in missing:
+                    print("  ", p)
+                raise SystemExit(1)
+        else:
+            print("\nDRY RUN. Run with --skriv to render (a few minutes per scene).")
+            raise SystemExit(0)
 
     # 1. Export per-part STLs (fine mesh — render quality, not print quality)
     os.makedirs(MESH, exist_ok=True)
