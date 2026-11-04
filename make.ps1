@@ -138,13 +138,40 @@ print('GLTF files written to out/gltf/')
         & $python -c $pyGltf
     }
 
+    "card-view" {
+        Require-Venv
+        $env:PYTHONPATH = "src"
+        & $python -m hexa.view $Scene
+    }
+
+    "card-gltf" {
+        Require-Venv
+        $env:PYTHONPATH = "src"
+        New-Item -ItemType Directory -Force out/gltf | Out-Null
+        $pyCard = @'
+import build123d as bd
+from hexa.card_tag import (build_hex_card, build_card_surround, build_pull_token,
+                            build_card_assembly, build_full_assembly, build_worn,
+                            build_simplified_ring)
+bd.export_gltf(build_hex_card(),          'out/gltf/card-nfc.gltf')
+bd.export_gltf(build_card_surround(),     'out/gltf/card-surround.gltf')
+bd.export_gltf(build_pull_token(),        'out/gltf/card-token.gltf')
+bd.export_gltf(build_card_assembly(),     'out/gltf/card-assembly.gltf')
+bd.export_gltf(build_full_assembly(),     'out/gltf/card-full.gltf')
+bd.export_gltf(build_worn(),              'out/gltf/card-worn.gltf')
+bd.export_gltf(build_simplified_ring(),   'out/gltf/card-ring.gltf')
+print('Card GLTF files written to out/gltf/')
+'@
+        & $python -c $pyCard
+    }
+
     "clean" {
         if (Test-Path out) { Remove-Item -Recurse -Force out }
         Write-Host "out/ deleted."
     }
 
     default {
-        Write-Error "Unknown target '$Target'. Valid: venv, check, test, view, step, stl, clean"
+        Write-Error "Unknown target '$Target'. Valid: venv, check, test, view, card-view, step, stl, gltf, card-gltf, clean"
         exit 1
     }
 }
