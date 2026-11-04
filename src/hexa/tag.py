@@ -314,6 +314,41 @@ def build_exploded(p: HexaParams = P, gap: float = 15.0) -> Compound:
     return Compound(children=[ring, core])
 
 
+def build_chain_stubs(p: HexaParams = P) -> Compound:
+    """Chain stubs only — for per-part Blender render."""
+    lh_cx    = p.RING_ACROSS_CORNERS / 2 - p.RING_RIM_T / 2
+    lh_y1    = +p.CHAIN_HOLE_SPACING / 2
+    lh_y2    = -p.CHAIN_HOLE_SPACING / 2
+    chain_r  = p.CHAIN_NECK_D / 2
+    stub_len = 30.0
+    ring_t   = p.RING_T
+    bridge_z = -4.0
+
+    parts = []
+    for lh_y in (lh_y1, lh_y2):
+        with BuildPart() as seg_above:
+            with Locations(Location(Vector(lh_cx, lh_y, ring_t + stub_len / 2))):
+                Cylinder(radius=chain_r, height=stub_len)
+        seg_above.part.color = _COLOR_CHAIN
+        parts.append(seg_above.part)
+
+        below_len = abs(bridge_z)
+        with BuildPart() as seg_below:
+            with Locations(Location(Vector(lh_cx, lh_y, bridge_z + below_len / 2))):
+                Cylinder(radius=chain_r, height=below_len)
+        seg_below.part.color = _COLOR_CHAIN
+        parts.append(seg_below.part)
+
+    bridge_span = abs(lh_y1 - lh_y2)
+    with BuildPart() as bridge:
+        with Locations(Location(Vector(lh_cx, 0.0, bridge_z), Vector(1, 0, 0), 90)):
+            Cylinder(radius=chain_r, height=bridge_span)
+    bridge.part.color = _COLOR_CHAIN
+    parts.append(bridge.part)
+
+    return Compound(children=parts)
+
+
 def build_worn(p: HexaParams = P) -> Compound:
     """Assembly + chain showing how the tag is worn on a ball chain.
 
