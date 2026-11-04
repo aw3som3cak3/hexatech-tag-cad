@@ -23,6 +23,7 @@ from build123d import (
     Align,
     Axis,
     Box,
+    BuildLine,
     BuildPart,
     BuildSketch,
     Circle,
@@ -34,12 +35,14 @@ from build123d import (
     Locations,
     Mode,
     Plane,
+    Polyline,
     RegularPolygon,
     Sphere,
     Text,
     Vector,
     chamfer,
     extrude,
+    make_face,
 )
 
 # Ring: natural bead-blast Ti Gr5 — stays with casualty
@@ -231,9 +234,32 @@ def build_ring(p: HexaParams = P):
             )
         extrude(amount=ring_t)
 
-        # ── 2. Mounting tab at +X vertex for chain holes ─────────────────
+        # ── 2. Mounting tab at +X vertex for chain hole ─────────────────
         with Locations(Location(Vector(_tab_x_center, 0.0, ring_t / 2))):
             Box(_tab_x_extent, 2 * p.CHAIN_TAB_HALF_W, ring_t)
+
+        # ── 2b. Triangular fillers — close the snagging void between the
+        #        angled hex faces and the rectangular tab sides.
+        #        Each void is a right triangle at the tab-hex junction.
+        _tan30 = math.tan(math.radians(30))   # 1/√3 ≈ 0.5774
+        _sqrt3 = math.sqrt(3)                  # ≈ 1.732
+        # x where the adjacent hex face crosses y = ±CHAIN_TAB_HALF_W
+        _x_fill = outer_ac / 2 - _tan30 * p.CHAIN_TAB_HALF_W
+        # y where the adjacent hex face crosses x = tab inner edge
+        _y_fill = _sqrt3 * _tab_overlap
+        _tab_ix = outer_ac / 2 - _tab_overlap   # 19 mm (tab inner x)
+        for _sign in (+1.0, -1.0):
+            _hw = _sign * p.CHAIN_TAB_HALF_W   # ±6 mm
+            _yf = _sign * _y_fill              # ±1.73 mm
+            try:
+                with BuildSketch(Plane.XY.offset(0)):
+                    with BuildLine():
+                        Polyline([(_x_fill, _hw), (_tab_ix, _hw),
+                                  (_tab_ix, _yf), (_x_fill, _hw)])
+                    make_face()
+                extrude(amount=ring_t)
+            except Exception:
+                pass
 
         # ── 3. Hollow out inner cavity ──────────────────────────────────
         with BuildSketch(Plane.XY.offset(face_t)):
@@ -278,14 +304,17 @@ def build_ring(p: HexaParams = P):
                 mode=Mode.SUBTRACT,
             )
 
-        # ── 7. Two chain holes in mounting tab ──────────────────────────
-        for lh_y in (lh_y1, lh_y2):
-            with Locations(Location(Vector(lh_cx, lh_y, ring_t / 2))):
-                Cylinder(
-                    radius=p.LANYARD_HOLE_D / 2,
-                    height=ring_t + 0.02,
-                    mode=Mode.SUBTRACT,
-                )
+        # ── 7. Single chain hole through the SIDE of the tab (Y-direction) ─
+        #        One hole through the full tab width — natural chain threading;
+        #        chain enters from one side, exits the other.
+        _hole_plane = Plane(
+            origin=Vector(lh_cx, 0.0, ring_t / 2),
+            x_dir=Vector(1.0, 0.0, 0.0),   # local x = global X
+            z_dir=Vector(0.0, 1.0, 0.0),   # normal = global Y → extrude cuts in Y
+        )
+        with BuildSketch(_hole_plane):
+            Circle(p.LANYARD_HOLE_D / 2)
+        extrude(amount=p.CHAIN_TAB_HALF_W + 0.01, both=True, mode=Mode.SUBTRACT)
 
         # ── 8. Engraving relief pockets + example text on each facet ────
         # Facet 0 (alpha=90°, +Y face) carries the antenna slot — no engrave pocket there.
@@ -546,34 +575,24 @@ def build_exploded(p: HexaParams = P, gap: float = 15.0) -> Compound:
 
 
 def build_chain_stubs(p: HexaParams = P) -> Compound:
-    """Chain stubs only — for per-part Blender render."""
+    """Chain stubs only — for per-part Blender render.
+
+    Chain threads through the single side hole in the mounting tab.
+    Two stubs extend from each side of the hole toward the neck.
+    """
     lh_cx    = p.RING_ACROSS_CORNERS / 2 + (p.CHAIN_TAB_DEPTH - 1.0) / 2
-    lh_y1    = +p.CHAIN_HOLE_SPACING / 2
-    lh_y2    = -p.CHAIN_HOLE_SPACING / 2
-    chain_r  = p.CHAIN_NECK_D / 2
     stub_len = 30.0
     ring_t   = p.RING_T
-    lower_len = 8.0
-    ball_d    = p.CHAIN_BALL_D
+    ball_d   = p.CHAIN_BALL_D
+    hole_z   = ring_t / 2   # side hole is at mid-height of tab
 
     parts = []
-    for lh_y in (lh_y1, lh_y2):
-        lh_x_rot = -lh_y
-        # Through-hole: chain threads through the tab in Z (back→front)
-        parts += _ball_chain_z(lh_x_rot, lh_cx, 0.0, ring_t, _COLOR_CHAIN,
-                               ball_d, p.CHAIN_NECK_D)
-        # Upward stub: exits front face, goes toward neck
-        parts += _ball_chain_y(lh_x_rot, lh_cx, ring_t, stub_len, _COLOR_CHAIN,
-                               ball_d, p.CHAIN_NECK_D)
-        # Downward stub: exits back face, loops below tab to bridge
-        parts += _ball_chain_y_neg(lh_x_rot, lh_cx, 0.0, lower_len, _COLOR_CHAIN,
-                                   ball_d, p.CHAIN_NECK_D)
-
-    bridge_y    = lh_cx - lower_len
-    bridge_x0   = -abs(lh_y1) - ball_d
-    bridge_span = abs(lh_y1 - lh_y2) + 2 * ball_d
-    parts += _ball_chain_x(bridge_x0, bridge_y, -chain_r, bridge_span, _COLOR_CHAIN,
-                           ball_d, p.CHAIN_NECK_D)
+    # +Y stub: chain exits +Y side of hole, continues toward neck
+    parts += _ball_chain_y(lh_cx, p.CHAIN_TAB_HALF_W, hole_z, stub_len,
+                           _COLOR_CHAIN, ball_d, p.CHAIN_NECK_D)
+    # -Y stub: chain exits -Y side of hole, continues toward neck
+    parts += _ball_chain_y_neg(lh_cx, -p.CHAIN_TAB_HALF_W, hole_z, stub_len,
+                               _COLOR_CHAIN, ball_d, p.CHAIN_NECK_D)
 
     return Compound(children=parts)
 
@@ -581,46 +600,26 @@ def build_chain_stubs(p: HexaParams = P) -> Compound:
 def build_worn(p: HexaParams = P) -> Compound:
     """Assembly + chain showing how the tag is worn on a ball chain.
 
-    The chain threads through TWO holes at the +X vertex (±CHAIN_HOLE_SPACING/2 in Y).
-    This prevents the tag from rotating — it hangs flat, point-down.
-
-    Chain routing: exits hole 1 upward → goes up chain · hole 1 downward → bridge
-    behind the tag → hole 2 upward → goes up chain · hole 2 exits upward.
-    Shown as: two upward stubs + two downward stubs + one horizontal bridge.
+    The chain threads through ONE side hole in the mounting tab at mid-height.
+    Both chain segments exit from opposite Y sides of the tab and go toward the neck.
     """
     ring = build_ring(p)
     core = build_core(p)
 
     lh_cx    = p.RING_ACROSS_CORNERS / 2 + (p.CHAIN_TAB_DEPTH - 1.0) / 2
-    lh_y1    = +p.CHAIN_HOLE_SPACING / 2
-    lh_y2    = -p.CHAIN_HOLE_SPACING / 2
-    chain_r  = p.CHAIN_NECK_D / 2
-    stub_len = 30.0   # mm above the mounting tab toward the neck
+    stub_len = 30.0
     ring_t   = p.RING_T
-
-    lower_len = 8.0  # mm the chain loops below the mounting tab before bridging
-    ball_d    = p.CHAIN_BALL_D
+    ball_d   = p.CHAIN_BALL_D
+    hole_z   = ring_t / 2   # side hole centre at mid-height
 
     parts = [ring, core]
 
-    for lh_y in (lh_y1, lh_y2):
-        lh_x_rot = -lh_y
-        # Through-hole: chain threads through the mounting tab in Z (back→front)
-        parts += _ball_chain_z(lh_x_rot, lh_cx, 0.0, ring_t, _COLOR_CHAIN,
-                               ball_d, p.CHAIN_NECK_D)
-        # Upward stub: exits front face, goes toward neck
-        parts += _ball_chain_y(lh_x_rot, lh_cx, ring_t, stub_len, _COLOR_CHAIN,
-                               ball_d, p.CHAIN_NECK_D)
-        # Downward stub: exits back face, loops below tab to bridge
-        parts += _ball_chain_y_neg(lh_x_rot, lh_cx, 0.0, lower_len, _COLOR_CHAIN,
-                                   ball_d, p.CHAIN_NECK_D)
-
-    # Bridge: connects the two downward stubs below the tab, slightly behind the back face.
-    bridge_y    = lh_cx - lower_len
-    bridge_x0   = -abs(lh_y1) - ball_d
-    bridge_span = abs(lh_y1 - lh_y2) + 2 * ball_d
-    parts += _ball_chain_x(bridge_x0, bridge_y, -chain_r, bridge_span, _COLOR_CHAIN,
-                           ball_d, p.CHAIN_NECK_D)
+    # +Y stub: chain exits +Y side of hole, extends toward neck
+    parts += _ball_chain_y(lh_cx, p.CHAIN_TAB_HALF_W, hole_z, stub_len,
+                           _COLOR_CHAIN, ball_d, p.CHAIN_NECK_D)
+    # -Y stub: chain exits -Y side of hole, extends toward neck
+    parts += _ball_chain_y_neg(lh_cx, -p.CHAIN_TAB_HALF_W, hole_z, stub_len,
+                               _COLOR_CHAIN, ball_d, p.CHAIN_NECK_D)
 
     return Compound(children=parts)
 
