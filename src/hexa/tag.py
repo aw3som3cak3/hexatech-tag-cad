@@ -261,6 +261,7 @@ def build_ring(p: HexaParams = P):
 
     part = bp.part
     part.color = _COLOR_RING
+    part = part.rotate(Axis.Z, 90)   # tab vertex to +Y (points up when worn)
     return part
 
 
@@ -350,6 +351,7 @@ def build_core(p: HexaParams = P):
 
     part = bp.part
     part.color = _COLOR_CORE
+    part = part.rotate(Axis.Z, 90)   # match ring orientation
     return part
 
 
@@ -379,22 +381,24 @@ def build_chain_stubs(p: HexaParams = P) -> Compound:
 
     parts = []
     for lh_y in (lh_y1, lh_y2):
+        # Coordinates rotated 90° CCW: (lh_cx, lh_y) → (-lh_y, lh_cx)
         with BuildPart() as seg_above:
-            with Locations(Location(Vector(lh_cx, lh_y, ring_t + stub_len / 2))):
+            with Locations(Location(Vector(-lh_y, lh_cx, ring_t + stub_len / 2))):
                 Cylinder(radius=chain_r, height=stub_len)
         seg_above.part.color = _COLOR_CHAIN
         parts.append(seg_above.part)
 
         below_len = abs(bridge_z)
         with BuildPart() as seg_below:
-            with Locations(Location(Vector(lh_cx, lh_y, bridge_z + below_len / 2))):
+            with Locations(Location(Vector(-lh_y, lh_cx, bridge_z + below_len / 2))):
                 Cylinder(radius=chain_r, height=below_len)
         seg_below.part.color = _COLOR_CHAIN
         parts.append(seg_below.part)
 
     bridge_span = abs(lh_y1 - lh_y2)
     with BuildPart() as bridge:
-        with Locations(Location(Vector(lh_cx, 0.0, bridge_z), Vector(1, 0, 0), 90)):
+        # Bridge now runs in X direction at (0, lh_cx): rotate cylinder 90° around Y
+        with Locations(Location(Vector(0.0, lh_cx, bridge_z), Vector(0, 1, 0), 90)):
             Cylinder(radius=chain_r, height=bridge_span)
     bridge.part.color = _COLOR_CHAIN
     parts.append(bridge.part)
@@ -426,25 +430,24 @@ def build_worn(p: HexaParams = P) -> Compound:
     parts = [ring, core]
 
     for lh_y in (lh_y1, lh_y2):
-        # Chain segment above (exiting front face upward)
+        # Coordinates rotated 90° CCW to match rotated ring: (lh_cx, lh_y) → (-lh_y, lh_cx)
         with BuildPart() as seg_above:
-            with Locations(Location(Vector(lh_cx, lh_y, ring_t + stub_len / 2))):
+            with Locations(Location(Vector(-lh_y, lh_cx, ring_t + stub_len / 2))):
                 Cylinder(radius=chain_r, height=stub_len)
         seg_above.part.color = _COLOR_CHAIN
         parts.append(seg_above.part)
 
-        # Chain segment below (exiting back face downward to bridge level)
         below_len = abs(bridge_z)
         with BuildPart() as seg_below:
-            with Locations(Location(Vector(lh_cx, lh_y, bridge_z + below_len / 2))):
+            with Locations(Location(Vector(-lh_y, lh_cx, bridge_z + below_len / 2))):
                 Cylinder(radius=chain_r, height=below_len)
         seg_below.part.color = _COLOR_CHAIN
         parts.append(seg_below.part)
 
-    # Horizontal bridge connecting the two downward exits behind the tag
+    # Bridge runs in X direction at (0, lh_cx) after rotation
     bridge_span = abs(lh_y1 - lh_y2)
     with BuildPart() as bridge:
-        with Locations(Location(Vector(lh_cx, 0.0, bridge_z), Vector(1, 0, 0), 90)):
+        with Locations(Location(Vector(0.0, lh_cx, bridge_z), Vector(0, 1, 0), 90)):
             Cylinder(radius=chain_r, height=bridge_span)
     bridge.part.color = _COLOR_CHAIN
     parts.append(bridge.part)
