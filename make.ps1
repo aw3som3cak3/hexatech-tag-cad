@@ -150,16 +150,16 @@ print('GLTF files written to out/gltf/')
         New-Item -ItemType Directory -Force out/gltf | Out-Null
         $pyCard = @'
 import build123d as bd
-from hexa.card_tag import (build_hex_card, build_card_surround, build_pull_token,
-                            build_card_assembly, build_full_assembly, build_worn,
-                            build_simplified_ring)
-bd.export_gltf(build_hex_card(),          'out/gltf/card-nfc.gltf')
-bd.export_gltf(build_card_surround(),     'out/gltf/card-surround.gltf')
-bd.export_gltf(build_pull_token(),        'out/gltf/card-token.gltf')
-bd.export_gltf(build_card_assembly(),     'out/gltf/card-assembly.gltf')
-bd.export_gltf(build_full_assembly(),     'out/gltf/card-full.gltf')
-bd.export_gltf(build_worn(),              'out/gltf/card-worn.gltf')
-bd.export_gltf(build_simplified_ring(),   'out/gltf/card-ring.gltf')
+from hexa.card_tag import (build_hex_card, build_card_grommet, build_card_surround,
+                            build_tear_away, build_card_assembly,
+                            build_full_assembly, build_worn)
+bd.export_gltf(build_hex_card(),        'out/gltf/card-nfc.gltf')
+bd.export_gltf(build_card_grommet(),    'out/gltf/card-grommet.gltf')
+bd.export_gltf(build_card_surround(),   'out/gltf/card-surround.gltf')
+bd.export_gltf(build_tear_away(),       'out/gltf/card-tearaway.gltf')
+bd.export_gltf(build_card_assembly(),   'out/gltf/card-assembly.gltf')
+bd.export_gltf(build_full_assembly(),   'out/gltf/card-full.gltf')
+bd.export_gltf(build_worn(),            'out/gltf/card-worn.gltf')
 print('Card GLTF files written to out/gltf/')
 '@
         & $python -c $pyCard
