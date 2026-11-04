@@ -123,6 +123,31 @@ def _ball_chain_y_neg(x: float, y_start: float, z: float,
     return parts
 
 
+def _ball_chain_z(x: float, y: float, z_start: float,
+                  length: float, color: Color,
+                  ball_d: float, neck_d: float) -> list:
+    """Return ball chain parts along +Z from (x, y, z_start)."""
+    neck_len = neck_d * 0.6
+    pitch = ball_d + neck_len
+    n_beads = max(1, int(length / pitch))
+    parts = []
+    for i in range(n_beads):
+        cz = z_start + i * pitch + ball_d / 2
+        with BuildPart() as bead:
+            with Locations(Location(Vector(x, y, cz))):
+                Sphere(radius=ball_d / 2)
+        bead.part.color = color
+        parts.append(bead.part)
+        if i < n_beads - 1:
+            nz = cz + ball_d / 2
+            with BuildPart() as neck:
+                with Locations(Location(Vector(x, y, nz + neck_len / 2))):
+                    Cylinder(radius=neck_d / 2, height=neck_len)
+            neck.part.color = color
+            parts.append(neck.part)
+    return parts
+
+
 def _ball_chain_x(x_start: float, y: float, z: float,
                   length: float, color: Color,
                   ball_d: float, neck_d: float) -> list:
@@ -528,16 +553,19 @@ def build_chain_stubs(p: HexaParams = P) -> Compound:
     chain_r  = p.CHAIN_NECK_D / 2
     stub_len = 30.0
     ring_t   = p.RING_T
-    bridge_z = -4.0
-
-    lower_len = 8.0  # chain loops below the mounting tab before bridging
+    lower_len = 8.0
     ball_d    = p.CHAIN_BALL_D
 
     parts = []
     for lh_y in (lh_y1, lh_y2):
         lh_x_rot = -lh_y
-        parts += _ball_chain_y(lh_x_rot, lh_cx, 0.0, stub_len, _COLOR_CHAIN,
+        # Through-hole: chain threads through the tab in Z (back→front)
+        parts += _ball_chain_z(lh_x_rot, lh_cx, 0.0, ring_t, _COLOR_CHAIN,
                                ball_d, p.CHAIN_NECK_D)
+        # Upward stub: exits front face, goes toward neck
+        parts += _ball_chain_y(lh_x_rot, lh_cx, ring_t, stub_len, _COLOR_CHAIN,
+                               ball_d, p.CHAIN_NECK_D)
+        # Downward stub: exits back face, loops below tab to bridge
         parts += _ball_chain_y_neg(lh_x_rot, lh_cx, 0.0, lower_len, _COLOR_CHAIN,
                                    ball_d, p.CHAIN_NECK_D)
 
@@ -575,15 +603,15 @@ def build_worn(p: HexaParams = P) -> Compound:
 
     parts = [ring, core]
 
-    # Upward stubs: chain comes from the neck, enters each hole from above.
     for lh_y in (lh_y1, lh_y2):
         lh_x_rot = -lh_y
-        parts += _ball_chain_y(lh_x_rot, lh_cx, 0.0, stub_len, _COLOR_CHAIN,
+        # Through-hole: chain threads through the mounting tab in Z (back→front)
+        parts += _ball_chain_z(lh_x_rot, lh_cx, 0.0, ring_t, _COLOR_CHAIN,
                                ball_d, p.CHAIN_NECK_D)
-
-    # Downward stubs: chain exits each hole downward, looping below the tab.
-    for lh_y in (lh_y1, lh_y2):
-        lh_x_rot = -lh_y
+        # Upward stub: exits front face, goes toward neck
+        parts += _ball_chain_y(lh_x_rot, lh_cx, ring_t, stub_len, _COLOR_CHAIN,
+                               ball_d, p.CHAIN_NECK_D)
+        # Downward stub: exits back face, loops below tab to bridge
         parts += _ball_chain_y_neg(lh_x_rot, lh_cx, 0.0, lower_len, _COLOR_CHAIN,
                                    ball_d, p.CHAIN_NECK_D)
 
@@ -621,9 +649,9 @@ def build_ring_electronics(p: HexaParams = P) -> Compound:
     slot_w    = p.ANTENNA_SLOT_W               # 1.2 mm (circumferential gap)
 
     chip_w, chip_d, chip_h = 3.5, 2.0, 1.2
-    # Chip sits slightly above the back face, centred on the slot face
+    # Chip is recessed into the back face — sits from z=0 inward (away from parting groove at z=1.2mm)
     chip_y = rim_mid_y
-    chip_z = chip_h / 2 + 0.3
+    chip_z = chip_h / 2            # chip spans z=0 (back face) to z=chip_h=1.2mm
 
     trace_w = chip_w - slot_w          # total copper bridging both sides ≈ 2.3 mm
     trace_d = 0.5                      # trace depth (Y) — matches chip pad width
@@ -693,9 +721,9 @@ def build_core_electronics(p: HexaParams = P) -> Compound:
     core_top = z0 + p.CORE_T                 # 4.0 mm
     apo_frac = math.cos(math.radians(30))    # 0.866
 
-    coil_z  = core_top - 0.08    # coil sits at/just inside core front face
     coil_t  = 0.4                # coil trace height
     trace_w = 0.65               # coil trace width (radial)
+    coil_z  = core_top - coil_t  # coil is on the INSIDE of the core front face
 
     # 4 turns: circumradii as fractions of core_apo
     r_fracs = (0.84, 0.69, 0.54, 0.39)
@@ -703,16 +731,16 @@ def build_core_electronics(p: HexaParams = P) -> Compound:
     chip_w, chip_d, chip_h = 3.5, 2.5, 1.2
     chip_y = core_apo * 0.52     # offset toward +Y (pre-rotation)
     chip_x = 0.0
-    chip_z = core_top + chip_h / 2 + 0.1
+    chip_z = core_top - chip_h / 2  # chip embedded in front face, top flush with core_top
 
     pcb_r  = core_apo * 0.92     # flex PCB hex radius ≈ core face
 
     parts = []
 
-    # Flex PCB base layer covering the core face
+    # Flex PCB base layer on the inside of the core front face
     try:
         with BuildPart() as pcb_bp:
-            with BuildSketch(Plane.XY.offset(coil_z - 0.1)):
+            with BuildSketch(Plane.XY.offset(coil_z - 0.25)):
                 RegularPolygon(radius=pcb_r, side_count=6,
                                align=(Align.CENTER, Align.CENTER))
             extrude(amount=0.25)
@@ -731,7 +759,7 @@ def build_core_electronics(p: HexaParams = P) -> Compound:
         apo_inner = r_inner * apo_frac
         # Gap box cut at −Y flat face of this ring
         gap_cx_y  = -(apo_inner + (apo_outer - apo_inner) / 2)
-        gap_w_cut = trace_w + 1.6
+        gap_w_cut = trace_w + 0.04   # just wider than trace so bridge fills it cleanly
         gap_d_cut = apo_outer - apo_inner + 0.3
         try:
             with BuildPart() as ring_bp:
