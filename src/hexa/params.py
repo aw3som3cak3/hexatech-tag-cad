@@ -33,6 +33,10 @@ class HexaParams:
     RING_FACE_T: float = 1.2
     """mm  front and back face wall thickness (the thin hex panels)."""
 
+    RING_FRONT_OPEN: bool = True
+    """If True the front face plate is omitted: cavity extrude extends to z=RING_T,
+    exposing the core face from the front. ADR-0042."""
+
     N_FACETS: int = 6
     """Number of flat facets — hexagonal; don't change unless rethinking the antenna slot."""
 
@@ -40,9 +44,9 @@ class HexaParams:
     CORE_T: float = 2.8
     """mm  total axial thickness of the ceramic core + carrier assembly."""
 
-    CORE_FLUSH_DEPTH: float = 0.0
-    """mm  how far the core surface sits below the ring front face.
-    0 = flush; positive = recessed."""
+    CORE_FLUSH_DEPTH: float = 0.5
+    """mm  core face recessed below the ring's front bore edge.
+    0 = flush; 0.5 creates a visible shadow line and fingernail purchase gap. ADR-0042."""
 
     # ── Bayonet ───────────────────────────────────────────────────────────────
     BAYONET_LUGS: int = 3
@@ -138,6 +142,19 @@ class HexaParams:
     CHAIN_HOLE_SPACING: float = 6.0
     """mm  centre-to-centre distance between the two chain holes at the top vertex.
     Chain threads through both holes so the tag hangs flat and cannot rotate."""
+
+    CHAIN_TAB_DEPTH: float = 4.0
+    """mm  how far the chain-hole mounting tab protrudes beyond the +X vertex."""
+
+    CHAIN_TAB_HALF_W: float = 6.0
+    """mm  half-width (Y direction) of the mounting tab; full tab is 2× this."""
+
+    PART_LINE_W: float = 0.5
+    """mm  width of the circumferential parting-line groove on the ring inner bore.
+    Groove marks the front edge of the core seating plane (z=RING_FACE_T). ADR-0042."""
+
+    PART_LINE_D: float = 0.4
+    """mm  depth the parting groove cuts into each flat bore wall. ADR-0042."""
 
     # ── Core engraving ────────────────────────────────────────────────────────
     CORE_ENGRAVE_DEPTH: float = 0.15
@@ -236,5 +253,16 @@ FACET_LABELS: dict[int, str] = {
     2: "ID-A",      # first 8 chars of 16-char enrollment short-ID
     3: "ID-B",      # last 8 chars of 16-char enrollment short-ID
     4: "UNIT",
+    5: "NFC",
+}
+
+#: Example engraved text for renders and PoC demonstrations.
+#: Shows where data would appear on each facet. Not used in production.
+FACET_EXAMPLES: dict[int, str] = {
+    0: "DOE",
+    1: "JOHN",
+    2: "A1B2C3D4",
+    3: "E5F6A7B8",
+    4: "1 INF BN",
     5: "NFC",
 }

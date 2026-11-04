@@ -35,6 +35,7 @@ from build123d import (
     Mode,
     Plane,
     RegularPolygon,
+    Text,
     Vector,
     chamfer,
     extrude,
@@ -47,7 +48,7 @@ _COLOR_CORE  = Color(0.18, 0.38, 0.72)
 # Stainless ball chain — slightly warmer steel grey
 _COLOR_CHAIN = Color(0.65, 0.65, 0.67)
 
-from .params import HexaParams, P
+from .params import FACET_EXAMPLES, HexaParams, P
 
 
 # ---------------------------------------------------------------------------
@@ -67,36 +68,42 @@ def build_ring(p: HexaParams = P):
     """Outer hexagonal ring body.
 
     Origin: tag centre, back face at z=0, front face at z=RING_T.
-    Inner cavity (z = RING_FACE_T … RING_T-RING_FACE_T) accepts the core.
+    Inner cavity (z = RING_FACE_T … RING_T, or RING_T-RING_FACE_T if closed) accepts the core.
 
     Features:
-    - Hollow hex prism (rim + two face plates)
+    - Hollow hex prism; front face plate removed when RING_FRONT_OPEN (ADR-0042)
+    - Circumferential parting-line groove at z=RING_FACE_T (ADR-0042)
     - Slotted-ring antenna slot through the +Y flat face
     - Chip A recess on the back face (inner rim side, +Y quadrant)
-    - Two lanyard holes (Z-axis cylinders) at the +X vertex, spaced CHAIN_HOLE_SPACING
-      apart in Y — chain threads through both so the tag hangs flat and cannot rotate
-    - Engraving relief zones on each of the 6 rim facets
+    - Mounting tab at +X vertex with two chain holes (chain threads through both)
+    - Engraving relief zones + example text on each of the 6 rim facets
+    - TURN / PULL instruction engraved on back face (ADR-0043)
     - Body chamfer on back-face outer perimeter (ergonomics)
     """
-    outer_ac      = p.RING_ACROSS_CORNERS
-    inner_ac      = p.RING_INNER_ACROSS_CORNERS
-    ring_t        = p.RING_T
-    face_t        = p.RING_FACE_T
-    cavity_h      = ring_t - 2 * face_t
+    outer_ac  = p.RING_ACROSS_CORNERS
+    inner_ac  = p.RING_INNER_ACROSS_CORNERS
+    ring_t    = p.RING_T
+    face_t    = p.RING_FACE_T
+    # ADR-0042: open front removes the front face plate
+    cavity_h  = ring_t - face_t if p.RING_FRONT_OPEN else ring_t - 2 * face_t
 
-    outer_apo     = _hex_apothem(outer_ac)   # 17.32 mm
-    inner_apo     = _hex_apothem(inner_ac)   # 14.20 mm
+    outer_apo = _hex_apothem(outer_ac)   # ~17.32 mm
+    inner_apo = _hex_apothem(inner_ac)   # ~14.20 mm
 
-    # Chain hole centres: midpoint of rim in the +X vertex direction, ±spacing/2 in Y
-    lh_cx = outer_ac / 2 - p.RING_RIM_T / 2   # 18.2 mm
-    lh_y1 = +p.CHAIN_HOLE_SPACING / 2          # +3.0 mm
-    lh_y2 = -p.CHAIN_HOLE_SPACING / 2          # -3.0 mm
+    # Mounting tab at +X vertex: gives chain holes clean through-hole geometry.
+    # Tab overlaps 1 mm into ring body for a clean boolean union.
+    _tab_overlap = 1.0
+    _tab_x_extent = p.CHAIN_TAB_DEPTH + _tab_overlap
+    _tab_x_center = outer_ac / 2 + (p.CHAIN_TAB_DEPTH - _tab_overlap) / 2
+    # Chain holes centred in tab (X), spaced ±CHAIN_HOLE_SPACING/2 in Y
+    lh_cx = outer_ac / 2 + (p.CHAIN_TAB_DEPTH - _tab_overlap) / 2
+    lh_y1 = +p.CHAIN_HOLE_SPACING / 2
+    lh_y2 = -p.CHAIN_HOLE_SPACING / 2
 
     # Chip A recess centre Y: midpoint of rim apothem, +Y side
     chip_a_cy = (outer_apo + inner_apo) / 2   # ~15.76 mm
 
     # Engraving field dimensions on each facet
-    # Each facet: width = FACET_SIDE, height = ring_t; with ENGRAVE_MARGIN on all sides
     engrave_w = p.FACET_SIDE - 2 * p.ENGRAVE_MARGIN
     engrave_h = ring_t - 2 * p.ENGRAVE_MARGIN
 
@@ -110,7 +117,11 @@ def build_ring(p: HexaParams = P):
             )
         extrude(amount=ring_t)
 
-        # ── 2. Hollow out inner cavity ──────────────────────────────────
+        # ── 2. Mounting tab at +X vertex for chain holes ─────────────────
+        with Locations(Location(Vector(_tab_x_center, 0.0, ring_t / 2))):
+            Box(_tab_x_extent, 2 * p.CHAIN_TAB_HALF_W, ring_t)
+
+        # ── 3. Hollow out inner cavity ──────────────────────────────────
         with BuildSketch(Plane.XY.offset(face_t)):
             RegularPolygon(
                 radius=inner_ac / 2,
@@ -119,18 +130,33 @@ def build_ring(p: HexaParams = P):
             )
         extrude(amount=cavity_h, mode=Mode.SUBTRACT)
 
-        # ── 3. Antenna slot: radial cut on +Y flat face, full height ────
-        #    Slot centre Y = outer_apo − half-depth (midpoint of slot)
+        # ── 4. Parting-line groove at z=RING_FACE_T (ADR-0042) ──────────
+        #    Circumferential groove on the inner bore wall marks the core
+        #    seating plane — visible from the front when RING_FRONT_OPEN.
+        if p.PART_LINE_W > 0 and p.PART_LINE_D > 0:
+            try:
+                groove_r = inner_apo + p.PART_LINE_D
+                groove_z = face_t + p.PART_LINE_W / 2
+                with Locations(Location(Vector(0.0, 0.0, groove_z))):
+                    Cylinder(
+                        radius=groove_r,
+                        height=p.PART_LINE_W,
+                        mode=Mode.SUBTRACT,
+                    )
+            except Exception:
+                pass  # cosmetic; skip if unsupported
+
+        # ── 5. Antenna slot: radial cut on +Y flat face, full height ────
         slot_cy = outer_apo - p.ANTENNA_SLOT_D / 2
         with Locations(Location(Vector(0.0, slot_cy, ring_t / 2))):
             Box(
                 p.ANTENNA_SLOT_W,
-                p.ANTENNA_SLOT_D + 0.02,  # +epsilon to avoid open face
+                p.ANTENNA_SLOT_D + 0.02,
                 ring_t + 0.02,
                 mode=Mode.SUBTRACT,
             )
 
-        # ── 4. Chip A recess: shallow pocket on back face (+Y rim zone) ─
+        # ── 6. Chip A recess: shallow pocket on back face (+Y rim zone) ─
         with Locations(Location(Vector(0.0, chip_a_cy, p.CHIP_A_RECESS_T / 2))):
             Cylinder(
                 radius=p.CHIP_A_RECESS_D / 2,
@@ -138,8 +164,7 @@ def build_ring(p: HexaParams = P):
                 mode=Mode.SUBTRACT,
             )
 
-        # ── 5. Two chain holes: Z-axis cylinders at +X vertex, offset ±Y ──
-        #    Chain threads through both so the tag hangs flat (cannot rotate).
+        # ── 7. Two chain holes in mounting tab ──────────────────────────
         for lh_y in (lh_y1, lh_y2):
             with Locations(Location(Vector(lh_cx, lh_y, ring_t / 2))):
                 Cylinder(
@@ -148,17 +173,13 @@ def build_ring(p: HexaParams = P):
                     mode=Mode.SUBTRACT,
                 )
 
-        # ── 6. Engraving relief zones: shallow pocket on each of 6 facets ──
-        # Facets 0–5, starting from +Y (90°), stepping −60° each (clockwise).
-        # Facet outward normal angle from +X: 90°, 30°, −30°, −90°, −150°, 150°
+        # ── 8. Engraving relief pockets + example text on each facet ────
         if engrave_w > 0 and engrave_h > 0:
             for i in range(p.N_FACETS):
                 alpha_deg = 90.0 - i * 60.0
                 alpha_rad = math.radians(alpha_deg)
-                # Face centre in XY, slightly inside outer face (half-depth inward)
                 f_cx = (outer_apo - p.ENGRAVE_DEPTH / 2) * math.cos(alpha_rad)
                 f_cy = (outer_apo - p.ENGRAVE_DEPTH / 2) * math.sin(alpha_rad)
-                # Box local X → outward normal (rotate alpha_deg around Z)
                 loc = Location(
                     Vector(f_cx, f_cy, ring_t / 2),
                     Vector(0, 0, 1),
@@ -166,13 +187,47 @@ def build_ring(p: HexaParams = P):
                 )
                 with Locations(loc):
                     Box(
-                        p.ENGRAVE_DEPTH + 0.02,  # radial depth (local X)
-                        engrave_w,               # facet-parallel width (local Y)
-                        engrave_h,               # axial height (Z)
+                        p.ENGRAVE_DEPTH + 0.02,
+                        engrave_w,
+                        engrave_h,
                         mode=Mode.SUBTRACT,
                     )
 
-        # ── 7. Body chamfer: back-face outer perimeter ──────────────────
+                # Example text engraving inside the relief pocket
+                label = FACET_EXAMPLES.get(i, "")
+                if label:
+                    try:
+                        font_size = min(1.4, engrave_h * 0.45)
+                        normal_v  = Vector(math.cos(alpha_rad), math.sin(alpha_rad), 0.0)
+                        x_dir_v   = Vector(-math.sin(alpha_rad), math.cos(alpha_rad), 0.0)
+                        text_origin = Vector(
+                            (outer_apo - p.ENGRAVE_DEPTH) * math.cos(alpha_rad),
+                            (outer_apo - p.ENGRAVE_DEPTH) * math.sin(alpha_rad),
+                            ring_t / 2,
+                        )
+                        text_plane = Plane(
+                            origin=text_origin, x_dir=x_dir_v, z_dir=normal_v
+                        )
+                        with BuildSketch(text_plane):
+                            Text(label, font_size=font_size,
+                                 align=(Align.CENTER, Align.CENTER))
+                        extrude(amount=-p.ENGRAVE_DEPTH, mode=Mode.SUBTRACT)
+                    except Exception:
+                        pass  # text is cosmetic; skip if unsupported
+
+        # ── 9. TURN / PULL instruction on back face (ADR-0043) ──────────
+        try:
+            back_text_y = inner_apo * 0.65   # ~9.2 mm from centre, within solid plate
+            for text, ty in (("TURN", back_text_y), ("PULL", -back_text_y)):
+                with BuildSketch(Plane.XY):
+                    with Locations(Location(Vector(0.0, ty, 0.0))):
+                        Text(text, font_size=1.0,
+                             align=(Align.CENTER, Align.CENTER))
+                extrude(amount=p.ENGRAVE_DEPTH, mode=Mode.SUBTRACT)
+        except Exception:
+            pass  # cosmetic; skip if unsupported
+
+        # ── 10. Body chamfer: back-face outer perimeter ─────────────────
         if p.BODY_CHAMFER > 0:
             try:
                 back_outer = (
@@ -183,9 +238,9 @@ def build_ring(p: HexaParams = P):
                 if back_outer:
                     chamfer(back_outer, length=p.BODY_CHAMFER)
             except Exception:
-                pass  # chamfer is a cosmetic feature; skip gracefully if unsupported
+                pass
 
-        # ── 8. Chain hole chamfers: entry/exit edges on both holes ──────
+        # ── 11. Chain hole chamfers ──────────────────────────────────────
         if p.LANYARD_CHAMFER > 0:
             for lh_y in (lh_y1, lh_y2):
                 try:
@@ -193,20 +248,16 @@ def build_ring(p: HexaParams = P):
                         bp.edges()
                         .filter_by(GeomType.CIRCLE)
                         .filter_by_position(
-                            Axis.X,
-                            lh_cx - p.LANYARD_HOLE_D,
-                            lh_cx + p.LANYARD_HOLE_D,
+                            Axis.X, lh_cx - p.LANYARD_HOLE_D, lh_cx + p.LANYARD_HOLE_D,
                         )
                         .filter_by_position(
-                            Axis.Y,
-                            lh_y - p.LANYARD_HOLE_D,
-                            lh_y + p.LANYARD_HOLE_D,
+                            Axis.Y, lh_y - p.LANYARD_HOLE_D, lh_y + p.LANYARD_HOLE_D,
                         )
                     )
                     if lh_edges:
                         chamfer(lh_edges, length=p.LANYARD_CHAMFER)
                 except Exception:
-                    pass  # chamfer is a cosmetic feature; skip gracefully if unsupported
+                    pass
 
     part = bp.part
     part.color = _COLOR_RING
@@ -318,7 +369,7 @@ def build_exploded(p: HexaParams = P, gap: float = 15.0) -> Compound:
 
 def build_chain_stubs(p: HexaParams = P) -> Compound:
     """Chain stubs only — for per-part Blender render."""
-    lh_cx    = p.RING_ACROSS_CORNERS / 2 - p.RING_RIM_T / 2
+    lh_cx    = p.RING_ACROSS_CORNERS / 2 + (p.CHAIN_TAB_DEPTH - 1.0) / 2
     lh_y1    = +p.CHAIN_HOLE_SPACING / 2
     lh_y2    = -p.CHAIN_HOLE_SPACING / 2
     chain_r  = p.CHAIN_NECK_D / 2
@@ -364,7 +415,7 @@ def build_worn(p: HexaParams = P) -> Compound:
     ring = build_ring(p)
     core = build_core(p)
 
-    lh_cx    = p.RING_ACROSS_CORNERS / 2 - p.RING_RIM_T / 2
+    lh_cx    = p.RING_ACROSS_CORNERS / 2 + (p.CHAIN_TAB_DEPTH - 1.0) / 2
     lh_y1    = +p.CHAIN_HOLE_SPACING / 2
     lh_y2    = -p.CHAIN_HOLE_SPACING / 2
     chain_r  = p.CHAIN_NECK_D / 2
