@@ -120,8 +120,8 @@ print('STL files written to out/stl/')
         $pyGltf = @'
 import build123d as bd
 from hexa.tag import (build_ring, build_core, build_assembly, build_exploded,
-                      build_worn, build_ring_electronics, build_core_electronics,
-                      build_electronics)
+                      build_worn, build_chain_hardware, build_ring_electronics,
+                      build_core_electronics, build_electronics)
 from hexa.checks import check_all
 check_all()
 bd.export_gltf(build_ring(),               'out/gltf/ring.gltf')
@@ -129,6 +129,7 @@ bd.export_gltf(build_core(),               'out/gltf/core.gltf')
 bd.export_gltf(build_assembly(),           'out/gltf/assembly.gltf')
 bd.export_gltf(build_exploded(),           'out/gltf/exploded.gltf')
 bd.export_gltf(build_worn(),               'out/gltf/worn.gltf')
+bd.export_gltf(build_chain_hardware(),     'out/gltf/chain-hardware.gltf')
 bd.export_gltf(build_ring_electronics(),   'out/gltf/ring-electronics.gltf')
 bd.export_gltf(build_core_electronics(),   'out/gltf/core-electronics.gltf')
 bd.export_gltf(build_electronics(),        'out/gltf/electronics.gltf')

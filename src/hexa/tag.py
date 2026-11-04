@@ -51,6 +51,8 @@ _COLOR_RING  = Color(0.72, 0.72, 0.76)
 _COLOR_CORE  = Color(0.18, 0.38, 0.72)
 # Stainless ball chain — slightly warmer steel grey
 _COLOR_CHAIN = Color(0.65, 0.65, 0.67)
+# 316L stainless — UUID cylinder and break-off plate (ADR-0049, ADR-0054)
+_COLOR_STEEL = Color(0.60, 0.60, 0.62)
 # NFC IC package (black epoxy) and copper antenna trace
 _COLOR_CHIP   = Color(0.02, 0.02, 0.02)
 _COLOR_COPPER = Color(0.72, 0.42, 0.10)
@@ -561,16 +563,18 @@ def build_core(p: HexaParams = P):
 
 def build_assembly(p: HexaParams = P) -> Compound:
     """Ring with core inserted (assembled position)."""
-    ring = build_ring(p)
-    core = build_core(p)
-    return Compound(children=[ring, core])
+    ring     = build_ring(p)
+    core     = build_core(p)
+    hardware = build_chain_hardware(p)
+    return Compound(children=[ring, core, hardware])
 
 
 def build_exploded(p: HexaParams = P, gap: float = 15.0) -> Compound:
     """Ring and core separated by `gap` mm in +Z for inspection."""
-    ring = build_ring(p)
-    core = build_core(p).move(Location(Vector(0, 0, gap)))
-    return Compound(children=[ring, core])
+    ring     = build_ring(p)
+    core     = build_core(p).move(Location(Vector(0, 0, gap)))
+    hardware = build_chain_hardware(p)
+    return Compound(children=[ring, core, hardware])
 
 
 def build_chain_stubs(p: HexaParams = P) -> Compound:
@@ -596,14 +600,64 @@ def build_chain_stubs(p: HexaParams = P) -> Compound:
     return Compound(children=parts)
 
 
+def build_chain_hardware(p: HexaParams = P) -> Compound:
+    """UUID cylinder (316L stainless) and break-off plate in the chain mount tab.
+
+    UUID cylinder: hollow stainless cylinder through the side chain hole, OD 7mm, ID 3.2mm.
+    Break-off plate: flat stainless plate on the outer tab face, 25×10×1mm.
+    Both parts rotate with the ring (tab ends at +Y after Axis.Z 90° rotation).
+    ADR-0049, ADR-0054.
+    """
+    lh_cx   = p.RING_ACROSS_CORNERS / 2 + (p.CHAIN_TAB_DEPTH - 1.0) / 2
+    ring_t  = p.RING_T
+    cyl_od  = 7.0
+    cyl_id  = p.LANYARD_HOLE_D    # 3.2 mm
+    cyl_len = 2 * p.CHAIN_TAB_HALF_W  # full Y-width of tab
+
+    parts = []
+
+    # UUID cylinder — Y-axis hollow cylinder (rotate Z-axis cylinder 90° around X)
+    try:
+        with BuildPart() as cyl_bp:
+            with Locations(Location(Vector(lh_cx, 0.0, ring_t / 2),
+                                    Vector(1.0, 0.0, 0.0), 90)):
+                Cylinder(radius=cyl_od / 2, height=cyl_len)
+            with Locations(Location(Vector(lh_cx, 0.0, ring_t / 2),
+                                    Vector(1.0, 0.0, 0.0), 90)):
+                Cylinder(radius=cyl_id / 2, height=cyl_len + 0.02,
+                         mode=Mode.SUBTRACT)
+        cyl_bp.part.color = _COLOR_STEEL
+        parts.append(cyl_bp.part)
+    except Exception:
+        pass
+
+    # Break-off plate — flat plate on the outer +Y tab face (pre-rotation)
+    plate_w = 10.0   # radial extent (X direction, pre-rotation)
+    plate_h = 25.0   # axial extent (Z direction)
+    plate_t = 1.0    # thickness (Y direction)
+    plate_y = p.CHAIN_TAB_HALF_W + plate_t / 2   # just outside tab face
+    try:
+        with BuildPart() as plate_bp:
+            with Locations(Location(Vector(lh_cx, plate_y, ring_t / 2))):
+                Box(plate_w, plate_t, plate_h)
+        plate_bp.part.color = _COLOR_STEEL
+        parts.append(plate_bp.part)
+    except Exception:
+        pass
+
+    result = Compound(children=parts)
+    return result.rotate(Axis.Z, 90)
+
+
 def build_worn(p: HexaParams = P) -> Compound:
     """Assembly + chain showing how the tag is worn on a ball chain.
 
     The chain threads through ONE side hole in the mounting tab at mid-height.
     Both chain segments exit from opposite Y sides of the tab and go toward the neck.
     """
-    ring = build_ring(p)
-    core = build_core(p)
+    ring     = build_ring(p)
+    core     = build_core(p)
+    hardware = build_chain_hardware(p)
 
     lh_cx    = p.RING_ACROSS_CORNERS / 2 + (p.CHAIN_TAB_DEPTH - 1.0) / 2
     stub_len = 30.0
@@ -611,7 +665,7 @@ def build_worn(p: HexaParams = P) -> Compound:
     ball_d   = p.CHAIN_BALL_D
     hole_z   = ring_t / 2   # side hole centre at mid-height
 
-    parts = [ring, core]
+    parts = [ring, core, hardware]
 
     # +Y stub: chain exits +Y side of hole, extends toward neck
     parts += _ball_chain_y(lh_cx, p.CHAIN_TAB_HALF_W, hole_z, stub_len,
