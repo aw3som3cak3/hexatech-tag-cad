@@ -29,6 +29,8 @@ if "--blender" in sys.argv:
     BLENDER = sys.argv[sys.argv.index("--blender") + 1]
 
 SITE_RENDERS = r"C:\Users\eriko\git\hexatech-site\public\renders"
+SITE_MODELS  = r"C:\Users\eriko\git\hexatech-site\public\models"
+GLTF_OUT     = os.path.join(os.path.dirname(__file__), "..", "out", "gltf")
 
 LJUS    = "1.4"
 PX      = "2400"
@@ -153,6 +155,7 @@ if __name__ == "__main__":
 
     # 3. Push to site if requested
     if "--push" in sys.argv:
+        # PNG renders
         if not os.path.isdir(SITE_RENDERS):
             os.makedirs(SITE_RENDERS, exist_ok=True)
         for scene in SCENES:
@@ -161,4 +164,19 @@ if __name__ == "__main__":
                 shutil.copy2(scene["out"], dest)
                 print("  pushed %s" % os.path.basename(scene["out"]))
         print("\nPushed renders to %s" % SITE_RENDERS)
+
+        # GLTF + BIN models (copy every file from out/gltf/)
+        gltf_dir = os.path.normpath(GLTF_OUT)
+        if os.path.isdir(gltf_dir):
+            os.makedirs(SITE_MODELS, exist_ok=True)
+            n = 0
+            for fname in os.listdir(gltf_dir):
+                if fname.endswith((".gltf", ".bin")):
+                    shutil.copy2(os.path.join(gltf_dir, fname),
+                                 os.path.join(SITE_MODELS, fname))
+                    n += 1
+            print("Pushed %d GLTF/BIN files to %s" % (n, SITE_MODELS))
+        else:
+            print("No out/gltf/ found — run 'make.ps1 gltf' first")
+
         print("Commit hexatech-site and redeploy: vercel --prod --yes")

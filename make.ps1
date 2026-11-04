@@ -116,6 +116,7 @@ print('STL files written to out/stl/')
         Require-Venv
         $env:PYTHONPATH = "src"
         New-Item -ItemType Directory -Force out/gltf | Out-Null
+        Write-Host "Note: copy out/gltf/* (gltf + bin) to hexatech-site/public/models/ — or run hexarender.py --push"
         & $python -c "
 import build123d as bd
 from hexa.tag import build_ring, build_core, build_assembly, build_exploded, build_worn, build_ring_electronics, build_core_electronics, build_electronics
