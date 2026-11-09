@@ -1,14 +1,15 @@
-"""Hexa Card form factor (ADR-0056 Proposed — rev 3).
+"""Hexa Card form factor (ADR-0056 Proposed — rev 4).
 
 Two elements on a neck chain:
 
-  build_hex_card()       — hexagonal NFC card with embedded JCOP chip + antenna
-  build_card_grommet()   — 316L stainless flange grommet (UUID, fire-survival layer)
-  build_card_surround()  — silicone hex edge surround (dog-tag silencer)
-  build_tear_away()      — 316L stainless hex tear-away tag (full identity fields)
-  build_card_assembly()  — card + surround + grommet combined
-  build_full_assembly()  — card assembly + tear-away, laid out side by side
-  build_worn()           — both elements on chain stubs (worn view)
+  build_hex_card()          — hexagonal NFC card with embedded DUOX/JCOP chip + antenna
+  build_card_grommet()      — 316L stainless flange grommet (UUID, fire-survival layer)
+  build_card_surround()     — silicone hex edge surround (dog-tag silencer)
+  build_tear_away()         — 316L stainless hex tear-away tag (full identity fields)
+  build_card_assembly()     — card + surround + grommet combined
+  build_full_assembly()     — card assembly + tear-away, laid out side by side
+  build_worn()              — both elements on chain stubs (worn view)
+  build_card_electronics()  — NFC inlay layer only (chip module + 2-turn coil)
 
 Sizing: both elements ~48 mm across-corners — equivalent area to a US dog tag.
 
@@ -92,9 +93,10 @@ CHAIN_LEN = 50.0  # mm — stub length shown in worn view
 _COLOR_CARD     = Color(0.93, 0.93, 0.91)   # off-white PC laminate
 _COLOR_SILICONE = Color(0.10, 0.10, 0.10)   # black silicone
 _COLOR_STEEL    = Color(0.60, 0.60, 0.62)   # 316L stainless
-_COLOR_CHIP     = Color(0.02, 0.02, 0.02)   # black epoxy JCOP
+_COLOR_CHIP     = Color(0.02, 0.02, 0.02)   # black epoxy DUOX/JCOP module
 _COLOR_COPPER   = Color(0.72, 0.42, 0.10)   # copper coil
 _COLOR_CHAIN    = Color(0.65, 0.65, 0.67)   # stainless chain
+_COLOR_INLAY    = Color(0.96, 0.92, 0.80)   # PET/PC inlay film
 
 
 # ---------------------------------------------------------------------------
@@ -249,8 +251,8 @@ def build_hex_card() -> Compound:
     chip.part.color = _COLOR_CHIP
     parts.append(chip.part)
 
-    # ── 2-turn hex coil ───────────────────────────────────────────────────────
-    for turn_scale in (0.88, 0.70):
+    # ── 2-turn hex coil — outer ~50 mm AC (turn_scale 0.93 × CARD_AC) ────────
+    for turn_scale in (0.93, 0.80):
         t_r     = card_r * turn_scale
         inner_r = t_r * (1 - COIL_T / (t_r * math.cos(math.radians(30))))
         try:
@@ -399,6 +401,69 @@ def build_tear_away() -> Compound:
         parts[0] = token_solid
     except Exception:
         pass
+
+    result = Compound(children=parts)
+    return result.rotate(Axis.Z, 90)
+
+
+# ---------------------------------------------------------------------------
+# NFC inlay / electronics view
+# ---------------------------------------------------------------------------
+
+def build_card_electronics() -> Compound:
+    """NFC inlay layer — DUOX/JCOP chip module + 2-turn hex antenna coil.
+
+    Shows the inlay without the card laminate body.
+    Outer coil aperture ~50-51 mm AC (turn_scale 0.93 × CARD_AC / 54 mm body).
+    Chain bore is cut from the substrate at the grommet position.
+    """
+    card_r  = CARD_AC / 2
+    hole_y  = card_r - GROMMET_OD / 2 - 1.5
+    _INLAY_T = 0.3   # mm — PET/PC film thickness
+    _TRACE_H = 0.15  # mm — copper trace height above film
+    _TRACE_W = 0.3   # mm — conductor width
+    parts = []
+
+    # ── Inlay substrate ───────────────────────────────────────────────────────
+    with BuildPart() as slab:
+        with BuildSketch(Plane.XY):
+            RegularPolygon(radius=card_r - 0.5, side_count=6)
+        extrude(amount=_INLAY_T)
+    with BuildPart() as slab_bore:
+        with Locations(Location(Vector(0, hole_y, _INLAY_T / 2))):
+            Cylinder(radius=GROMMET_OD / 2 + 0.5,
+                     height=_INLAY_T + 0.1,
+                     align=(Align.CENTER, Align.CENTER, Align.CENTER))
+    slab_solid = slab.part - slab_bore.part
+    slab_solid.color = _COLOR_INLAY
+    parts.append(slab_solid)
+
+    # ── DUOX / JCOP chip module (8 × 5 mm ISO 7816 module) ───────────────────
+    with BuildPart() as module:
+        with Locations(Location(Vector(0, -card_r * 0.15, _INLAY_T))):
+            Box(8.0, 5.0, 0.8,
+                align=(Align.CENTER, Align.CENTER, Align.MIN))
+    module.part.color = _COLOR_CHIP
+    parts.append(module.part)
+
+    # ── 2-turn hex coil — outer ~50 mm AC, inner ~43 mm AC ───────────────────
+    for turn_scale in (0.93, 0.80):
+        t_r     = card_r * turn_scale
+        inner_r = t_r - _TRACE_W / math.cos(math.radians(30))
+        try:
+            with BuildPart() as coil_outer:
+                with BuildSketch(Plane.XY.offset(_INLAY_T)):
+                    RegularPolygon(radius=t_r, side_count=6)
+                extrude(amount=_TRACE_H)
+            with BuildPart() as coil_inner:
+                with BuildSketch(Plane.XY.offset(_INLAY_T)):
+                    RegularPolygon(radius=max(inner_r, t_r * 0.95), side_count=6)
+                extrude(amount=_TRACE_H)
+            coil_ring = coil_outer.part - coil_inner.part
+            coil_ring.color = _COLOR_COPPER
+            parts.append(coil_ring)
+        except Exception:
+            pass
 
     result = Compound(children=parts)
     return result.rotate(Axis.Z, 90)
