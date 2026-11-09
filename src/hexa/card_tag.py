@@ -1,4 +1,4 @@
-"""Hexa Card form factor (ADR-0056 Proposed — rev 2).
+"""Hexa Card form factor (ADR-0056 Proposed — rev 3).
 
 Two elements on a neck chain:
 
@@ -51,10 +51,10 @@ CARD_AC         = 48.0   # mm — hex card across-corners
 CARD_T          = 3.5    # mm — card body thickness
 CARD_CHAMFER    = 0.4    # mm — edge chamfer
 
-# 316L flange grommet in chain hole
-GROMMET_FLANGE_OD = 8.0  # mm — flange outer diameter (visible on face)
-GROMMET_BORE_D    = 3.5  # mm — chain bore diameter
-GROMMET_FLANGE_T  = 0.8  # mm — flange thickness on each face
+# 316L double-flange grommet in chain hole (8–9 mm OD per RF + structural constraint)
+GROMMET_OD       = 9.0  # mm — flange outer diameter; UUID laser-engraved on front flange face
+GROMMET_BORE_D   = 3.5  # mm — chain bore diameter
+GROMMET_FLANGE_T = 0.8  # mm — flange thickness on each face
 
 # Silicone hex surround
 SIL_WALL        = 1.8    # mm — perimeter wall thickness
@@ -160,17 +160,16 @@ def _chain_y_neg(x: float, y_start: float, z: float, length: float) -> list:
 def build_card_grommet() -> Compound:
     """316L stainless double-flange grommet — pressed into card chain hole.
 
-    Protects card plastic from chain wear. UUID engraved on flange face.
+    9 mm flange OD (RF-safe upper limit per EE review). UUID engraved on
+    front flange face — flat surface, field-readable, fire-survivable.
     Fire-survival layer: grommet stays on chain after card plastic burns.
     """
     parts = []
 
-    # Tube through card
     with BuildPart() as tube:
-        Cylinder(radius=GROMMET_FLANGE_OD / 2,
+        Cylinder(radius=GROMMET_OD / 2,
                  height=CARD_T + 2 * GROMMET_FLANGE_T,
                  align=(Align.CENTER, Align.CENTER, Align.MIN))
-    # Bore
     with BuildPart() as bore:
         Cylinder(radius=GROMMET_BORE_D / 2,
                  height=CARD_T + 2 * GROMMET_FLANGE_T + 0.1,
@@ -209,7 +208,7 @@ def build_hex_card() -> Compound:
     Chain hole is at the +Y vertex (top). Grommet pocket matches grommet OD.
     """
     card_r   = CARD_AC / 2
-    hole_y   = card_r - GROMMET_FLANGE_OD / 2 - 0.6
+    hole_y   = card_r - GROMMET_OD / 2 - 1.5   # 1.5 mm margin inside hex vertex
     parts    = []
 
     # ── Card body ────────────────────────────────────────────────────────────
@@ -222,22 +221,19 @@ def build_hex_card() -> Compound:
         except Exception:
             pass
 
-    # ── Grommet pocket (flange recess + through bore) ────────────────────────
+    # ── Grommet pocket (flange recesses + through bore) ─────────────────────
     with BuildPart() as pocket:
-        # Through bore
         with Locations(Location(Vector(0, hole_y, CARD_T / 2))):
             Cylinder(radius=GROMMET_BORE_D / 2 + 0.05,
                      height=CARD_T + 1,
                      align=(Align.CENTER, Align.CENTER, Align.CENTER))
     with BuildPart() as flange_pocket:
-        # Front flange recess
         with Locations(Location(Vector(0, hole_y, CARD_T))):
-            Cylinder(radius=GROMMET_FLANGE_OD / 2 + 0.05,
+            Cylinder(radius=GROMMET_OD / 2 + 0.05,
                      height=GROMMET_FLANGE_T + 0.05,
                      align=(Align.CENTER, Align.CENTER, Align.MAX))
-        # Back flange recess
         with Locations(Location(Vector(0, hole_y, 0))):
-            Cylinder(radius=GROMMET_FLANGE_OD / 2 + 0.05,
+            Cylinder(radius=GROMMET_OD / 2 + 0.05,
                      height=GROMMET_FLANGE_T + 0.05,
                      align=(Align.CENTER, Align.CENTER, Align.MIN))
 
@@ -324,6 +320,14 @@ def build_card_surround() -> Compound:
         extrude(amount=CARD_T)
 
     surround = outer.part - inner.part
+    # Cut chain bore through the two face flanges at the grommet position
+    _gy = CARD_AC / 2 - GROMMET_OD / 2 - 1.5
+    with BuildPart() as _chain_bore:
+        with Locations(Location(Vector(0, _gy, -SIL_FLANGE_T - 0.1))):
+            Cylinder(radius=GROMMET_BORE_D / 2 + 0.5,
+                     height=CARD_T + 2 * SIL_FLANGE_T + 0.2,
+                     align=(Align.CENTER, Align.CENTER, Align.MIN))
+    surround = surround - _chain_bore.part
     surround.color = _COLOR_SILICONE
     return Compound(children=[surround]).rotate(Axis.Z, 90)
 
