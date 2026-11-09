@@ -47,7 +47,7 @@ from build123d import (
 # ---------------------------------------------------------------------------
 
 # Both elements share the same outer footprint (~US dog tag area)
-CARD_AC         = 48.0   # mm — hex card across-corners
+CARD_AC         = 54.0   # mm — hex card across-corners (ADR-0056 OQ-8 resolved)
 CARD_T          = 3.5    # mm — card body thickness
 CARD_CHAMFER    = 0.4    # mm — edge chamfer
 
@@ -62,7 +62,7 @@ SIL_FLANGE_T    = 0.6    # mm — face overhang on each side
 SIL_AC          = CARD_AC + 2 * SIL_WALL / math.cos(math.radians(30))
 
 # 316L steel tear-away — same outer size as card
-TOKEN_AC        = 48.0   # mm — matching the card for a visual pair
+TOKEN_AC        = 54.0   # mm — matching the card for a visual pair
 TOKEN_T         = 2.5    # mm — solid steel, thinner than card
 TOKEN_BORE_D    = 3.5    # mm — chain hole
 TOKEN_CHAMFER   = 0.3    # mm
