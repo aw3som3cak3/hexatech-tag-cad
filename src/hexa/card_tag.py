@@ -185,14 +185,17 @@ def build_card_grommet(barrel_height: float | None = None) -> Compound:
     grommet_solid.color = _COLOR_STEEL
     parts.append(grommet_solid)
 
-    # UUID engraving on front flange face (representational)
+    # UUID engraving — split across flange annulus above and below the bore.
+    # The bore (r=1.75mm) only occupies y ∈ [-1.75, +1.75], so ±2.5mm clears it.
     uuid_z = barrel_height + 2 * GROMMET_FLANGE_T
     try:
         with BuildPart() as uuid_text:
             with BuildSketch(Plane.XY.offset(uuid_z)):
-                with Locations(Location(Vector(0, 0, 0))):
-                    Text("A1B2C3D4",
-                         font_size=0.9,
+                with Locations(Location(Vector(0, +2.5, 0))):
+                    Text("A1B2", font_size=0.7,
+                         align=(Align.CENTER, Align.CENTER))
+                with Locations(Location(Vector(0, -2.5, 0))):
+                    Text("C3D4", font_size=0.7,
                          align=(Align.CENTER, Align.CENTER))
             extrude(amount=-ENGRAVE_D)
         engraved = grommet_solid - uuid_text.part
