@@ -1,4 +1,4 @@
-"""Hexa Card form factor (ADR-0056 Proposed — rev 4).
+"""Hexa Card form factor (ADR-0056 Proposed — rev 5).
 
 Two elements on a neck chain:
 
@@ -11,7 +11,8 @@ Two elements on a neck chain:
   build_worn()              — both elements on chain stubs (worn view)
   build_card_electronics()  — NFC inlay layer only (chip module + 2-turn coil)
 
-Sizing: both elements ~48 mm across-corners — equivalent area to a US dog tag.
+Sizing: both elements 54 mm across-corners.
+Hex orientation: pointy-top (vertex at +Y / chain hole). RegularPolygon rotation=30.
 
 Coordinate system: z=0 at back face, +z toward front face, +Y toward chain hole.
 """
@@ -159,22 +160,25 @@ def _chain_y_neg(x: float, y_start: float, z: float, length: float) -> list:
 # 316L flange grommet
 # ---------------------------------------------------------------------------
 
-def build_card_grommet() -> Compound:
-    """316L stainless double-flange grommet — pressed into card chain hole.
+def build_card_grommet(barrel_height: float | None = None) -> Compound:
+    """316L stainless double-flange grommet — pressed into card or tear-away chain hole.
 
     9 mm flange OD (RF-safe upper limit per EE review). UUID engraved on
     front flange face — flat surface, field-readable, fire-survivable.
     Fire-survival layer: grommet stays on chain after card plastic burns.
+    barrel_height defaults to CARD_T; pass TOKEN_T for the tear-away grommet.
     """
+    if barrel_height is None:
+        barrel_height = CARD_T
     parts = []
 
     with BuildPart() as tube:
         Cylinder(radius=GROMMET_OD / 2,
-                 height=CARD_T + 2 * GROMMET_FLANGE_T,
+                 height=barrel_height + 2 * GROMMET_FLANGE_T,
                  align=(Align.CENTER, Align.CENTER, Align.MIN))
     with BuildPart() as bore:
         Cylinder(radius=GROMMET_BORE_D / 2,
-                 height=CARD_T + 2 * GROMMET_FLANGE_T + 0.1,
+                 height=barrel_height + 2 * GROMMET_FLANGE_T + 0.1,
                  align=(Align.CENTER, Align.CENTER, Align.MIN))
 
     grommet_solid = tube.part - bore.part
@@ -182,7 +186,7 @@ def build_card_grommet() -> Compound:
     parts.append(grommet_solid)
 
     # UUID engraving on front flange face (representational)
-    uuid_z = CARD_T + 2 * GROMMET_FLANGE_T
+    uuid_z = barrel_height + 2 * GROMMET_FLANGE_T
     try:
         with BuildPart() as uuid_text:
             with BuildSketch(Plane.XY.offset(uuid_z)):
@@ -208,6 +212,7 @@ def build_hex_card() -> Compound:
     """Hexagonal NFC card — PC/PETG laminate, JCOP chip, 2-turn hex coil.
 
     Chain hole is at the +Y vertex (top). Grommet pocket matches grommet OD.
+    Hex orientation: pointy-top (rotation=30 so vertex lands on +Y axis).
     """
     card_r   = CARD_AC / 2
     hole_y   = card_r - GROMMET_OD / 2 - 1.5   # 1.5 mm margin inside hex vertex
@@ -216,7 +221,7 @@ def build_hex_card() -> Compound:
     # ── Card body ────────────────────────────────────────────────────────────
     with BuildPart() as body:
         with BuildSketch(Plane.XY):
-            RegularPolygon(radius=card_r, side_count=6)
+            RegularPolygon(radius=card_r, side_count=6, rotation=30)
         extrude(amount=CARD_T)
         try:
             chamfer(body.edges(), CARD_CHAMFER)
@@ -258,13 +263,20 @@ def build_hex_card() -> Compound:
         try:
             with BuildPart() as coil_outer:
                 with BuildSketch(Plane.XY.offset(COIL_Z)):
-                    RegularPolygon(radius=t_r, side_count=6)
+                    RegularPolygon(radius=t_r, side_count=6, rotation=30)
                 extrude(amount=COIL_H)
             with BuildPart() as coil_inner:
                 with BuildSketch(Plane.XY.offset(COIL_Z)):
-                    RegularPolygon(radius=max(inner_r, t_r * 0.86), side_count=6)
+                    RegularPolygon(radius=max(inner_r, t_r * 0.86), side_count=6, rotation=30)
                 extrude(amount=COIL_H)
             coil_ring = coil_outer.part - coil_inner.part
+            # Keep-out: remove material where the grommet barrel sits
+            with BuildPart() as grommet_cutout:
+                with Locations(Location(Vector(0, hole_y, COIL_Z - 0.1))):
+                    Cylinder(radius=GROMMET_OD / 2 + 0.1,
+                             height=COIL_H + 0.2,
+                             align=(Align.CENTER, Align.CENTER, Align.MIN))
+            coil_ring = coil_ring - grommet_cutout.part
             coil_ring.color = _COLOR_COPPER
             parts.append(coil_ring)
         except Exception:
@@ -299,7 +311,7 @@ def build_hex_card() -> Compound:
     parts.append(grommet)
 
     result = Compound(children=parts)
-    return result.rotate(Axis.Z, 90)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -314,11 +326,11 @@ def build_card_surround() -> Compound:
 
     with BuildPart() as outer:
         with BuildSketch(Plane.XY.offset(-SIL_FLANGE_T)):
-            RegularPolygon(radius=sil_r, side_count=6)
+            RegularPolygon(radius=sil_r, side_count=6, rotation=30)
         extrude(amount=sil_t)
     with BuildPart() as inner:
         with BuildSketch(Plane.XY):
-            RegularPolygon(radius=card_r, side_count=6)
+            RegularPolygon(radius=card_r, side_count=6, rotation=30)
         extrude(amount=CARD_T)
 
     surround = outer.part - inner.part
@@ -331,7 +343,7 @@ def build_card_surround() -> Compound:
                      align=(Align.CENTER, Align.CENTER, Align.MIN))
     surround = surround - _chain_bore.part
     surround.color = _COLOR_SILICONE
-    return Compound(children=[surround]).rotate(Axis.Z, 90)
+    return Compound(children=[surround])
 
 
 # ---------------------------------------------------------------------------
@@ -354,27 +366,36 @@ def build_tear_away() -> Compound:
     Chain hole at +Y vertex with chamfered bore. Attached by short chain.
     """
     token_r = TOKEN_AC / 2
-    hole_y  = token_r - TOKEN_BORE_D / 2 - 0.6
+    hole_y  = token_r - GROMMET_OD / 2 - 1.5   # 1.5 mm margin inside hex vertex
     parts   = []
 
     # ── Token body ────────────────────────────────────────────────────────────
     with BuildPart() as body:
         with BuildSketch(Plane.XY):
-            RegularPolygon(radius=token_r, side_count=6)
+            RegularPolygon(radius=token_r, side_count=6, rotation=30)
         extrude(amount=TOKEN_T)
         try:
             chamfer(body.edges(), TOKEN_CHAMFER)
         except Exception:
             pass
 
-    # ── Chain hole ────────────────────────────────────────────────────────────
-    with BuildPart() as hole_cut:
+    # ── Grommet pocket (flange recesses + through bore) ─────────────────────
+    with BuildPart() as pocket:
         with Locations(Location(Vector(0, hole_y, TOKEN_T / 2))):
-            Cylinder(radius=TOKEN_BORE_D / 2,
+            Cylinder(radius=GROMMET_BORE_D / 2 + 0.05,
                      height=TOKEN_T + 1,
                      align=(Align.CENTER, Align.CENTER, Align.CENTER))
+    with BuildPart() as flange_pocket:
+        with Locations(Location(Vector(0, hole_y, TOKEN_T))):
+            Cylinder(radius=GROMMET_OD / 2 + 0.05,
+                     height=GROMMET_FLANGE_T + 0.05,
+                     align=(Align.CENTER, Align.CENTER, Align.MAX))
+        with Locations(Location(Vector(0, hole_y, 0))):
+            Cylinder(radius=GROMMET_OD / 2 + 0.05,
+                     height=GROMMET_FLANGE_T + 0.05,
+                     align=(Align.CENTER, Align.CENTER, Align.MIN))
 
-    token_solid = body.part - hole_cut.part
+    token_solid = body.part - pocket.part - flange_pocket.part
     token_solid.color = _COLOR_STEEL
     parts.append(token_solid)
 
@@ -402,8 +423,13 @@ def build_tear_away() -> Compound:
     except Exception:
         pass
 
+    # Grommet placed in hole
+    grommet = build_card_grommet(barrel_height=TOKEN_T).moved(
+        Location(Vector(0, hole_y, -GROMMET_FLANGE_T)))
+    parts.append(grommet)
+
     result = Compound(children=parts)
-    return result.rotate(Axis.Z, 90)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -427,7 +453,7 @@ def build_card_electronics() -> Compound:
     # ── Inlay substrate ───────────────────────────────────────────────────────
     with BuildPart() as slab:
         with BuildSketch(Plane.XY):
-            RegularPolygon(radius=card_r - 0.5, side_count=6)
+            RegularPolygon(radius=card_r - 0.5, side_count=6, rotation=30)
         extrude(amount=_INLAY_T)
     with BuildPart() as slab_bore:
         with Locations(Location(Vector(0, hole_y, _INLAY_T / 2))):
@@ -453,20 +479,27 @@ def build_card_electronics() -> Compound:
         try:
             with BuildPart() as coil_outer:
                 with BuildSketch(Plane.XY.offset(_INLAY_T)):
-                    RegularPolygon(radius=t_r, side_count=6)
+                    RegularPolygon(radius=t_r, side_count=6, rotation=30)
                 extrude(amount=_TRACE_H)
             with BuildPart() as coil_inner:
                 with BuildSketch(Plane.XY.offset(_INLAY_T)):
-                    RegularPolygon(radius=max(inner_r, t_r * 0.95), side_count=6)
+                    RegularPolygon(radius=max(inner_r, t_r * 0.95), side_count=6, rotation=30)
                 extrude(amount=_TRACE_H)
             coil_ring = coil_outer.part - coil_inner.part
+            # Keep-out: remove material where the grommet barrel sits
+            with BuildPart() as grommet_cutout:
+                with Locations(Location(Vector(0, hole_y, _INLAY_T - 0.1))):
+                    Cylinder(radius=GROMMET_OD / 2 + 0.1,
+                             height=_TRACE_H + 0.2,
+                             align=(Align.CENTER, Align.CENTER, Align.MIN))
+            coil_ring = coil_ring - grommet_cutout.part
             coil_ring.color = _COLOR_COPPER
             parts.append(coil_ring)
         except Exception:
             pass
 
     result = Compound(children=parts)
-    return result.rotate(Axis.Z, 90)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -505,17 +538,17 @@ def build_worn() -> Compound:
     token_offset_x = TOKEN_AC / 2 + CARD_AC / 2 + 10.0
     token_placed   = token.moved(Location(Vector(token_offset_x, 0, 0)))
 
-    # Chain from card hole upward (+Y)
-    card_hole_y = CARD_AC / 2 - 1.5
+    # Chain from card hole upward (+Y) — exits top of grommet bore
+    card_hole_y = CARD_AC / 2 - GROMMET_OD / 2 - 1.5 + GROMMET_BORE_D / 2
     card_chain  = _chain_y(0, card_hole_y, CARD_T / 2, CHAIN_LEN)
 
     # Short chain from tear-away hole upward
-    tok_hole_y  = TOKEN_AC / 2 - 1.5
+    tok_hole_y  = TOKEN_AC / 2 - GROMMET_OD / 2 - 1.5 + GROMMET_BORE_D / 2
     tok_chain   = _chain_y(token_offset_x, tok_hole_y, TOKEN_T / 2,
                             CHAIN_LEN * 0.5)
 
     # Short chain downward from tear-away (shows easy-pull separation)
-    tok_chain_down = _chain_y_neg(token_offset_x, -(tok_hole_y),
+    tok_chain_down = _chain_y_neg(token_offset_x, -tok_hole_y,
                                   TOKEN_T / 2, 20.0)
 
     all_parts = ([card_asm, token_placed]
