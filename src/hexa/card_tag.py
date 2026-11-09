@@ -2,14 +2,14 @@
 
 Two elements on a neck chain:
 
-  build_hex_card()          — hexagonal NFC card with embedded DUOX/JCOP chip + antenna
+  build_hex_card()          — hexagonal NFC card with embedded JCOP chip + antenna
   build_card_grommet()      — 316L stainless flange grommet (UUID, fire-survival layer)
   build_card_surround()     — silicone hex edge surround (dog-tag silencer)
   build_tear_away()         — 316L stainless hex tear-away tag (full identity fields)
   build_card_assembly()     — card + surround + grommet combined
   build_full_assembly()     — card assembly + tear-away, laid out side by side
   build_worn()              — both elements on chain stubs (worn view)
-  build_card_electronics()  — NFC inlay layer only (chip module + 2-turn coil)
+  build_card_electronics()  — NFC inlay layer only (JCOP chip module + 2-turn coil)
 
 Sizing: both elements 54 mm across-corners.
 Hex orientation: pointy-top (vertex at +Y / chain hole). RegularPolygon rotation=30.
@@ -94,7 +94,7 @@ CHAIN_LEN = 50.0  # mm — stub length shown in worn view
 _COLOR_CARD     = Color(0.93, 0.93, 0.91)   # off-white PC laminate
 _COLOR_SILICONE = Color(0.10, 0.10, 0.10)   # black silicone
 _COLOR_STEEL    = Color(0.60, 0.60, 0.62)   # 316L stainless
-_COLOR_CHIP     = Color(0.02, 0.02, 0.02)   # black epoxy DUOX/JCOP module
+_COLOR_CHIP     = Color(0.02, 0.02, 0.02)   # black epoxy JCOP module
 _COLOR_COPPER   = Color(0.72, 0.42, 0.10)   # copper coil
 _COLOR_CHAIN    = Color(0.65, 0.65, 0.67)   # stainless chain
 _COLOR_INLAY    = Color(0.96, 0.92, 0.80)   # PET/PC inlay film
@@ -433,7 +433,7 @@ def build_tear_away() -> Compound:
 # ---------------------------------------------------------------------------
 
 def build_card_electronics() -> Compound:
-    """NFC inlay layer — DUOX/JCOP chip module + 2-turn hex antenna coil.
+    """NFC inlay layer — JCOP chip module + 2-turn hex antenna coil.
 
     Shows the inlay without the card laminate body.
     Outer coil aperture ~50-51 mm AC (turn_scale 0.93 × CARD_AC / 54 mm body).
@@ -460,7 +460,7 @@ def build_card_electronics() -> Compound:
     slab_solid.color = _COLOR_INLAY
     parts.append(slab_solid)
 
-    # ── DUOX / JCOP chip module — NFC inlay module ~5 × 3 mm ────────────────
+    # ── JCOP chip module — NFC inlay module ~5 × 3 mm ───────────────────────
     # Positioned so right edge sits on the inner coil right vertical side;
     # a bridge trace runs from inner coil right face to outer coil right face.
     _inner_apo = card_r * 0.80 * math.cos(math.radians(30))   # ≈ 18.71 mm
