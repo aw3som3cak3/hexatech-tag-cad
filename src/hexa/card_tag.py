@@ -257,28 +257,21 @@ def build_hex_card() -> Compound:
     parts.append(chip.part)
 
     # ── 2-turn hex coil — outer ~50 mm AC (turn_scale 0.93 × CARD_AC) ────────
+    # Keep-out at grommet hole done in sketch (more robust than 3D boolean).
     for turn_scale in (0.93, 0.80):
         t_r     = card_r * turn_scale
         inner_r = t_r * (1 - COIL_T / (t_r * math.cos(math.radians(30))))
         try:
-            with BuildPart() as coil_outer:
+            with BuildPart() as coil_part:
                 with BuildSketch(Plane.XY.offset(COIL_Z)):
                     RegularPolygon(radius=t_r, side_count=6, rotation=30)
+                    RegularPolygon(radius=max(inner_r, t_r * 0.86), side_count=6,
+                                   rotation=30, mode=Mode.SUBTRACT)
+                    with Locations(Location(Vector(0, hole_y, 0))):
+                        Circle(GROMMET_OD / 2 + 0.5, mode=Mode.SUBTRACT)
                 extrude(amount=COIL_H)
-            with BuildPart() as coil_inner:
-                with BuildSketch(Plane.XY.offset(COIL_Z)):
-                    RegularPolygon(radius=max(inner_r, t_r * 0.86), side_count=6, rotation=30)
-                extrude(amount=COIL_H)
-            coil_ring = coil_outer.part - coil_inner.part
-            # Keep-out: remove material where the grommet barrel sits
-            with BuildPart() as grommet_cutout:
-                with Locations(Location(Vector(0, hole_y, COIL_Z - 0.1))):
-                    Cylinder(radius=GROMMET_OD / 2 + 0.1,
-                             height=COIL_H + 0.2,
-                             align=(Align.CENTER, Align.CENTER, Align.MIN))
-            coil_ring = coil_ring - grommet_cutout.part
-            coil_ring.color = _COLOR_COPPER
-            parts.append(coil_ring)
+            coil_part.part.color = _COLOR_COPPER
+            parts.append(coil_part.part)
         except Exception:
             pass
 
@@ -399,7 +392,7 @@ def build_tear_away() -> Compound:
     token_solid.color = _COLOR_STEEL
     parts.append(token_solid)
 
-    # ── Face engraving (representational — front face) ────────────────────────
+    # ── Face text — raised + contrasting colour (engraving invisible on grey steel) ─
     token_apo = _hex_apothem(TOKEN_AC)
     text_rows = [
         ("DOE",         token_apo * 0.55),
@@ -409,6 +402,7 @@ def build_tear_away() -> Compound:
         ("1 INF BN",   -token_apo * 0.38),
         ("SWE  2026",  -token_apo * 0.60),
     ]
+    _text_col = Color(0.92, 0.88, 0.76)   # warm off-white — contrasts against steel grey
     try:
         for label, ty in text_rows:
             with BuildPart() as txt:
@@ -416,10 +410,9 @@ def build_tear_away() -> Compound:
                     with Locations(Location(Vector(0, ty, 0))):
                         Text(label, font_size=1.8,
                              align=(Align.CENTER, Align.CENTER))
-                extrude(amount=-ENGRAVE_D)
-            token_solid = token_solid - txt.part
-        token_solid.color = _COLOR_STEEL
-        parts[0] = token_solid
+                extrude(amount=0.3)
+            txt.part.color = _text_col
+            parts.append(txt.part)
     except Exception:
         pass
 
@@ -457,44 +450,56 @@ def build_card_electronics() -> Compound:
         extrude(amount=_INLAY_T)
     with BuildPart() as slab_bore:
         with Locations(Location(Vector(0, hole_y, _INLAY_T / 2))):
-            Cylinder(radius=GROMMET_OD / 2 + 0.5,
+            Cylinder(radius=GROMMET_BORE_D / 2 + 0.2,
                      height=_INLAY_T + 0.1,
                      align=(Align.CENTER, Align.CENTER, Align.CENTER))
     slab_solid = slab.part - slab_bore.part
     slab_solid.color = _COLOR_INLAY
     parts.append(slab_solid)
 
-    # ── DUOX / JCOP chip module (8 × 5 mm ISO 7816 module) ───────────────────
+    # ── DUOX / JCOP chip module — NFC inlay module ~5 × 3 mm ────────────────
+    # Positioned so right edge sits on the inner coil right vertical side;
+    # a bridge trace runs from inner coil right face to outer coil right face.
+    _inner_apo = card_r * 0.80 * math.cos(math.radians(30))   # ≈ 18.71 mm
+    _outer_apo = card_r * 0.93 * math.cos(math.radians(30))   # ≈ 21.73 mm
+    _chip_w, _chip_d, _chip_h = 5.0, 3.0, 0.3
+    _chip_x = _inner_apo - _chip_w / 2   # right chip edge flush with inner coil face
     with BuildPart() as module:
-        with Locations(Location(Vector(0, -card_r * 0.15, _INLAY_T))):
-            Box(8.0, 5.0, 0.8,
+        with Locations(Location(Vector(_chip_x, 0.0, _INLAY_T))):
+            Box(_chip_w, _chip_d, _chip_h,
                 align=(Align.CENTER, Align.CENTER, Align.MIN))
     module.part.color = _COLOR_CHIP
     parts.append(module.part)
 
+    # Bridge trace from inner coil right face to outer coil right face (chip bond)
+    _bridge_len = _outer_apo - _inner_apo + 0.4   # slight overlap into both coil traces
+    _bridge_cx  = (_inner_apo + _outer_apo) / 2
+    try:
+        with BuildPart() as bridge:
+            with Locations(Location(Vector(_bridge_cx, 0.0, _INLAY_T))):
+                Box(_bridge_len, 0.6, _TRACE_H,
+                    align=(Align.CENTER, Align.CENTER, Align.MIN))
+        bridge.part.color = _COLOR_COPPER
+        parts.append(bridge.part)
+    except Exception:
+        pass
+
     # ── 2-turn hex coil — outer ~50 mm AC, inner ~43 mm AC ───────────────────
+    # Keep-out at grommet hole done in sketch (no 3D boolean → no floating fragments).
     for turn_scale in (0.93, 0.80):
         t_r     = card_r * turn_scale
         inner_r = t_r - _TRACE_W / math.cos(math.radians(30))
         try:
-            with BuildPart() as coil_outer:
+            with BuildPart() as coil_part:
                 with BuildSketch(Plane.XY.offset(_INLAY_T)):
                     RegularPolygon(radius=t_r, side_count=6, rotation=30)
+                    RegularPolygon(radius=max(inner_r, t_r * 0.95), side_count=6,
+                                   rotation=30, mode=Mode.SUBTRACT)
+                    with Locations(Location(Vector(0, hole_y, 0))):
+                        Circle(GROMMET_OD / 2 + 0.5, mode=Mode.SUBTRACT)
                 extrude(amount=_TRACE_H)
-            with BuildPart() as coil_inner:
-                with BuildSketch(Plane.XY.offset(_INLAY_T)):
-                    RegularPolygon(radius=max(inner_r, t_r * 0.95), side_count=6, rotation=30)
-                extrude(amount=_TRACE_H)
-            coil_ring = coil_outer.part - coil_inner.part
-            # Keep-out: remove material where the grommet barrel sits
-            with BuildPart() as grommet_cutout:
-                with Locations(Location(Vector(0, hole_y, _INLAY_T - 0.1))):
-                    Cylinder(radius=GROMMET_OD / 2 + 0.1,
-                             height=_TRACE_H + 0.2,
-                             align=(Align.CENTER, Align.CENTER, Align.MIN))
-            coil_ring = coil_ring - grommet_cutout.part
-            coil_ring.color = _COLOR_COPPER
-            parts.append(coil_ring)
+            coil_part.part.color = _COLOR_COPPER
+            parts.append(coil_part.part)
         except Exception:
             pass
 
